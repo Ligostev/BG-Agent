@@ -97,7 +97,11 @@ cp .env.example .env     # заполнить домен, пароли, SECRET_K
 docker compose up -d --build
 ```
 
-Поднимутся web, worker, PostgreSQL, Redis и Caddy, который сам выпустит
+Для пробы на сервере от 512 МБ памяти есть облегчённая установка одной
+командой, без Docker, PostgreSQL и Redis (SQLite, uvicorn под systemd, Caddy):
+`deploy/install-lite.sh <домен>`, подробности в начале скрипта.
+
+Полная версия: поднимутся web, worker, PostgreSQL, Redis и Caddy, который сам выпустит
 HTTPS-сертификат для домена из `DOMAIN`.
 
 ## Тесты
