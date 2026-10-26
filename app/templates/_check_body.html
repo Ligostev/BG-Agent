@@ -1,0 +1,35 @@
+{# Пока проверка не закончилась, фрагмент сам себя перезапрашивает раз в 2 секунды. #}
+<div {% if check.status not in CheckStatus.FINISHED and check.status != CheckStatus.CAPTCHA %}
+     hx-get="/checks/{{ check.id }}/body" hx-trigger="every 2s" hx-target="#check-body"{% endif %}>
+  <div class="card">
+    <h2 style="margin:0 0 4px">{{ check.title or check.query }}</h2>
+    <span class="badge s-{{ check.status }}">{{ check.status | status }}</span>
+    {% if check.error %}<p class="error">{{ check.error }}</p>{% endif %}
+  </div>
+
+  {% if check.status == CheckStatus.CAPTCHA %}
+  <div class="card">
+    <p><b>Сайт ФНС просит капчу.</b> Введите цифры с картинки.</p>
+    <img src="/api/checks/{{ check.id }}/captcha?t={{ range(100000) | random }}" alt="капча" height="60">
+    <form class="row" method="post" action="/checks/{{ check.id }}/captcha" style="margin-top:8px">
+      <input type="text" name="answer" inputmode="numeric" autocomplete="off" required autofocus>
+      <button type="submit">Отправить</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% for r in check.results %}
+  <div class="card">
+    <h3 style="margin-top:0">{{ sources.get(r.source, r.source) }}
+      {% if r.data %}<a class="muted" style="font-size:13px;font-weight:400"
+         href="/api/checks/{{ check.id }}/data/{{ r.source }}" target="_blank">JSON</a>{% endif %}</h3>
+    {% if r.status == "found" %}
+      <table>{% for label, value in r.summary %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+    {% elif r.status == "not_found" %}
+      <p class="muted">Сведений не найдено.</p>
+    {% else %}
+      <p class="r-error">Источник ответил ошибкой: {{ r.error }}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
