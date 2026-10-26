@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <form method="post" action="/checks">
+    <label for="query"><b>Проверить компанию или ИП</b></label>
+    <div class="row" style="margin-top:8px">
+      <input id="query" type="text" name="query" value="{{ query or '' }}"
+             placeholder="ИНН или ОГРН" inputmode="numeric" required autofocus>
+      <button type="submit">Проверить</button>
+    </div>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  </form>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">История проверок</h3>
+  {% if checks %}
+  <table>
+    {% for c in checks %}
+    <tr>
+      <td><a href="/checks/{{ c.id }}">{{ c.title or c.query }}</a>
+        {% if c.title %}<div class="muted">{{ c.inn or c.query }}</div>{% endif %}</td>
+      <td><span class="badge s-{{ c.status }}">{{ c.status | status }}</span></td>
+      <td class="muted">{{ c.created_at.strftime("%d.%m.%Y %H:%M") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Проверок пока нет.</p>
+  {% endif %}
+</div>
+{% endblock %}

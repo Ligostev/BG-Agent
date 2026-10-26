@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ check.title or check.query }}{% endblock %}
+{% block content %}
+<p><a href="/checks">← Все проверки</a></p>
+<div id="check-body">{% include "_check_body.html" %}</div>
+{% endblock %}
