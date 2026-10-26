@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Проверка контрагентов{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7280; --line:#e3e6eb;
+            --accent:#2453d6; --ok:#137a3a; --warn:#a15c00; --bad:#b42318; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+           background:var(--bg); color:var(--text); }
+    header { background:var(--card); border-bottom:1px solid var(--line); }
+    header .wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .wrap { max-width:900px; margin:0 auto; padding:14px 16px; }
+    a { color:var(--accent); text-decoration:none; }
+    .brand { font-weight:600; color:var(--text); }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:16px 0; }
+    input[type=text], input[type=email], input[type=password] {
+      width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+    button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff;
+             font:inherit; cursor:pointer; }
+    button.link { background:none; color:var(--muted); padding:0; }
+    .row { display:flex; gap:8px; } .row input { flex:1; }
+    .error { color:var(--bad); margin:8px 0 0; }
+    .muted { color:var(--muted); }
+    table { width:100%; border-collapse:collapse; }
+    td, th { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); font-weight:500; width:35%; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:13px; background:var(--bg); }
+    .s-done, .r-found { color:var(--ok); } .s-error, .r-error { color:var(--bad); }
+    .s-captcha { color:var(--warn); }
+    form.narrow { max-width:380px; margin:40px auto; }
+    form.narrow label { display:block; margin:12px 0 4px; }
+    form.narrow button { margin-top:16px; width:100%; }
+  </style>
+</head>
+<body>
+  <header><div class="wrap">
+    <a class="brand" href="/">Проверка контрагентов</a>
+    {% if user %}
+      <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
+        <button class="link" type="submit">Выйти</button></form>
+    {% endif %}
+  </div></header>
+  <main class="wrap">{% block content %}{% endblock %}</main>
+</body>
+</html>
