@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -73,3 +73,55 @@ class SourceResult(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     check: Mapped[Check] = relationship(back_populates="results")
+
+
+class TenderProfile(Base):
+    """Что клиент поставляет и где: по этому профилю подбираются закупки."""
+
+    __tablename__ = "tender_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+    okpd2: Mapped[list] = mapped_column(JSON, default=list)
+    regions: Mapped[list] = mapped_column(JSON, default=list)
+    keywords: Mapped[list] = mapped_column(JSON, default=list)
+    laws: Mapped[list] = mapped_column(JSON, default=lambda: ["44-ФЗ", "223-ФЗ", "615-ПП"])
+    # Описание своими словами и его вектор для подбора по смыслу. Вектор считает задача
+    # app.tenders_sync; embedding_text — описание, по которому он посчитан.
+    description: Mapped[str | None] = mapped_column(Text)
+    embedding: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
+    embedding_text: Mapped[str | None] = mapped_column(Text)
+    price_min: Mapped[float | None] = mapped_column(Float)
+    price_max: Mapped[float | None] = mapped_column(Float)
+    min_days_left: Mapped[int] = mapped_column(Integer, default=2)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class TenderNotice(Base):
+    """Извещение о закупке из ЕИС (полный разбор в data, см. tenders.Notice)."""
+
+    __tablename__ = "tender_notices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    purchase_number: Mapped[str] = mapped_column(String(32), unique=True)
+    region: Mapped[str] = mapped_column(String(4), index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    max_price: Mapped[float | None] = mapped_column(Float)
+    data: Mapped[dict] = mapped_column(JSON)
+    embedding: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GuaranteeRequest(Base):
+    """Клиент нажал «Нужна гарантия» по закупке: заявка брокеру."""
+
+    __tablename__ = "guarantee_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    purchase_number: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str | None] = mapped_column(Text)
+    product: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16), default="new")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

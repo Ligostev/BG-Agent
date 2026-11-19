@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, web
+from . import api, tenders_web, web
 from .captcha import CaptchaBroker, MemoryCaptchaBroker, RedisCaptchaBroker
 from .checks import CheckRunner
 from .config import Settings, settings as default_settings
@@ -77,6 +77,7 @@ def create_app(settings: Settings | None = None, sources: list[Source] | None = 
                        same_site="lax", https_only=settings.cookie_secure)
     app.include_router(api.router)
     app.include_router(web.router)
+    app.include_router(tenders_web.router)
 
     @app.exception_handler(LoginRequired)
     async def to_login(request: Request, exc: LoginRequired):

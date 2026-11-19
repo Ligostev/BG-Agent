@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Упрощённый пример извещения 223-ФЗ; с живой выгрузкой ЕИС ещё не сверялся. -->
+<ns2:purchaseNoticeAE xmlns:ns2="http://zakupki.gov.ru/223fz/purchase/1" xmlns="http://zakupki.gov.ru/223fz/types/1">
+  <ns2:header><guid>a1</guid><createDateTime>2026-11-18T09:00:00</createDateTime></ns2:header>
+  <ns2:body><ns2:item><ns2:purchaseNoticeAEData>
+    <guid>b2</guid>
+    <registrationNumber>32615000001</registrationNumber>
+    <name>Выполнение работ по ремонту кровли административного здания</name>
+    <publicationDateTime>2026-11-18T12:00:00+03:00</publicationDateTime>
+    <customer><mainInfo><fullName>АО «ВОДОКАНАЛ»</fullName><inn>7702000002</inn></mainInfo></customer>
+    <purchaseCodeName>Аукцион в электронной форме</purchaseCodeName>
+    <electronicPlaceInfo><name>РТС-тендер</name></electronicPlaceInfo>
+    <urlEIS>https://zakupki.gov.ru/223/purchase/public/purchase/info/common-info.html?regNumber=32615000001</urlEIS>
+    <submissionCloseDateTime>2026-12-01T10:00:00+03:00</submissionCloseDateTime>
+    <lots>
+      <lot><lotData>
+        <subject>Ремонт кровли корпуса 1</subject>
+        <initialSum>3000000.00</initialSum>
+        <lotItems><lotItem><okpd2><code>43.91.19.110</code><name>Работы кровельные прочие</name></okpd2></lotItem></lotItems>
+      </lotData></lot>
+      <lot><lotData>
+        <subject>Ремонт кровли корпуса 2</subject>
+        <initialSum>2000000.00</initialSum>
+        <lotItems><lotItem><okpd2><code>43.91.19.110</code><name>Работы кровельные прочие</name></okpd2></lotItem></lotItems>
+      </lotData></lot>
+    </lots>
+  </ns2:purchaseNoticeAEData></ns2:item></ns2:body>
+</ns2:purchaseNoticeAE>
