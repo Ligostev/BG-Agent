@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
+import os
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -35,8 +37,34 @@ from .notice import Notice, _find, _local, parse_notice
 URL = "https://int44.zakupki.gov.ru/eis-integration/services/getDocsIP"
 NS = "http://zakupki.gov.ru/fz44/get-docs-ip/ws"
 
-# Извещения 44-ФЗ: электронный аукцион, запрос котировок, открытый конкурс.
-NOTICE_TYPES = ("epNotificationEF2020", "epNotificationEZK2020", "epNotificationEOK2020")
+# Виды извещений по законам: (подсистема ЕИС, виды документов).
+# Элемент запроса для всех подсистем — documentType44 (так делают и другие клиенты сервиса).
+DOC_TYPES: dict[str, tuple[str, tuple[str, ...]]] = {
+    # электронный аукцион, запрос котировок, открытый конкурс
+    "44-ФЗ": ("PRIZ", ("epNotificationEF2020", "epNotificationEZK2020", "epNotificationEOK2020")),
+    "223-ФЗ": ("RI223", ("purchaseNotice", "purchaseNoticeOK", "purchaseNoticeOA", "purchaseNoticeAE",
+                         "purchaseNoticeAE94FZ", "purchaseNoticeAESMBO", "purchaseNoticeZPESMBO")),
+    # Капремонт по ПП РФ 615 (185-ФЗ). Название вида документа не сверено с живой ЕИС:
+    # если сервис его не примет, это будет в журнале, остальные законы грузятся как обычно.
+    "615-ПП": ("PRIZ", ("pprf615NotificationEF",)),
+}
+LAWS = tuple(DOC_TYPES)
+NOTICE_TYPES = DOC_TYPES["44-ФЗ"][1]
+
+
+def doc_types_from_env(raw: str) -> dict[str, tuple[str, tuple[str, ...]]]:
+    """Переопределение видов документов, например
+    EIS_DOC_TYPES="615-ПП=PRIZ:pprf615NotificationEF2020;223-ФЗ=RI223:purchaseNotice,purchaseNoticeAE"."""
+    out = dict(DOC_TYPES)
+    for part in filter(None, (x.strip() for x in (raw or "").split(";"))):
+        law, _, rest = part.partition("=")
+        subsystem, _, types = rest.partition(":")
+        if law.strip() and subsystem.strip() and types.strip():
+            out[law.strip()] = (subsystem.strip(), tuple(t.strip() for t in types.split(",") if t.strip()))
+    return out
+
+
+log = logging.getLogger(__name__)
 
 
 class EisError(Exception):
@@ -90,7 +118,8 @@ def iter_archive(data: bytes) -> list[tuple[str, bytes]]:
 class EisClient:
     def __init__(self, token: str, *, url: str = URL, min_interval: float = 2.0,
                  download_tries: int = 6, download_delay: float = 10.0,
-                 http: httpx.AsyncClient | None = None):
+                 http: httpx.AsyncClient | None = None,
+                 doc_types: dict[str, tuple[str, tuple[str, ...]]] | None = None):
         if not token:
             raise EisError("Не задан токен ЕИС (переменная EIS_TOKEN)")
         self.token = token
@@ -99,6 +128,7 @@ class EisClient:
         self.download_tries = download_tries
         self.download_delay = download_delay
         self.http = http or httpx.AsyncClient(timeout=httpx.Timeout(60, read=180))
+        self.doc_types = doc_types or doc_types_from_env(os.environ.get("EIS_DOC_TYPES", ""))
         self._last = 0.0
         self._lock = asyncio.Lock()
 
@@ -109,9 +139,9 @@ class EisClient:
                 await asyncio.sleep(wait)
             self._last = time.monotonic()
 
-    async def archive_urls(self, region: str, doc_type: str, day: date) -> list[str]:
+    async def archive_urls(self, region: str, doc_type: str, day: date, subsystem: str = "PRIZ") -> list[str]:
         await self._throttle()
-        body = build_region_request(region, doc_type, day).replace("{token}", escape(self.token))
+        body = build_region_request(region, doc_type, day, subsystem=subsystem).replace("{token}", escape(self.token))
         r = await self.http.post(self.url, content=body.encode(),
                                  headers={"Content-Type": "text/xml; charset=utf-8"})
         if r.status_code >= 500 and b"Fault" not in r.content:
@@ -129,18 +159,29 @@ class EisClient:
                 await asyncio.sleep(self.download_delay)
         raise EisError(f"Архив не скачался: HTTP {r.status_code}, {r.content[:200]!r}")
 
-    async def notices(self, region: str, day: date,
-                      doc_types: tuple[str, ...] = NOTICE_TYPES) -> AsyncIterator[Notice]:
-        """Все извещения заказчиков региона, опубликованные в этот день."""
-        for doc_type in doc_types:
-            for archive_url in await self.archive_urls(region, doc_type, day):
-                for _, xml in iter_archive(await self.download(archive_url)):
-                    try:
-                        notice = parse_notice(xml, region=region)
-                    except ET.ParseError:
-                        continue
-                    if notice is not None:
-                        yield notice
+    async def notices(self, region: str, day: date, laws: tuple[str, ...] = LAWS) -> AsyncIterator[Notice]:
+        """Все извещения заказчиков региона, опубликованные в этот день, по выбранным законам.
+
+        Ошибка по одному виду документа (например, неверное название) не мешает остальным.
+        """
+        for law in laws:
+            subsystem, doc_types = self.doc_types.get(law, ("", ()))
+            for doc_type in doc_types:
+                try:
+                    urls = await self.archive_urls(region, doc_type, day, subsystem)
+                except EisError as e:
+                    if "токен" in str(e).lower() or "token" in str(e).lower():
+                        raise
+                    log.error("ЕИС %s %s, регион %s: %s", law, doc_type, region, e)
+                    continue
+                for archive_url in urls:
+                    for _, xml in iter_archive(await self.download(archive_url)):
+                        try:
+                            notice = parse_notice(xml, region=region)
+                        except ET.ParseError:
+                            continue
+                        if notice is not None:
+                            yield notice
 
     async def aclose(self) -> None:
         await self.http.aclose()

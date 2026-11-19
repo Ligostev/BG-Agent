@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from tenders import EisClient, EisError
+from tenders.eis import LAWS
 
 from .config import settings
 from .db import create_tables, make_engine, make_sessionmaker
@@ -31,16 +32,24 @@ async def profile_regions(sm: async_sessionmaker) -> list[str]:
     return sorted({r for regions in rows for r in (regions or [])})
 
 
+async def profile_laws(sm: async_sessionmaker) -> tuple[str, ...]:
+    async with sm() as db:
+        rows = (await db.execute(select(TenderProfile.laws))).scalars().all()
+    wanted = {law for laws in rows for law in (laws if laws is not None else LAWS)}
+    return tuple(law for law in LAWS if law in wanted)
+
+
 async def sync(sm: async_sessionmaker, client: EisClient, day: date,
-               regions: list[str] | None = None) -> dict[str, int]:
+               regions: list[str] | None = None, laws: tuple[str, ...] | None = None) -> dict[str, int]:
     """Сохраняет извещения за день по регионам. Возвращает {регион: сколько новых/обновлённых}."""
     regions = regions if regions is not None else await profile_regions(sm)
+    laws = laws if laws is not None else await profile_laws(sm)
     stats: dict[str, int] = {}
     for region in regions:
         count = 0
         try:
             async with sm() as db:
-                async for n in client.notices(region, day):
+                async for n in client.notices(region, day, laws):
                     row = (await db.execute(select(TenderNotice).where(
                         TenderNotice.purchase_number == n.purchase_number))).scalar_one_or_none()
                     if row is None:

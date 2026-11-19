@@ -85,6 +85,7 @@ class TenderProfile(Base):
     okpd2: Mapped[list] = mapped_column(JSON, default=list)
     regions: Mapped[list] = mapped_column(JSON, default=list)
     keywords: Mapped[list] = mapped_column(JSON, default=list)
+    laws: Mapped[list] = mapped_column(JSON, default=lambda: ["44-ФЗ", "223-ФЗ", "615-ПП"])
     price_min: Mapped[float | None] = mapped_column(Float)
     price_max: Mapped[float | None] = mapped_column(Float)
     min_days_left: Mapped[int] = mapped_column(Integer, default=2)

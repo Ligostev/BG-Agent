@@ -9,9 +9,11 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import datetime, timezone
 
 from .imports import Contract
+from .keywords import parse_query, search
 from .notice import Notice
 from .regions import REGIONS
 
@@ -26,7 +28,8 @@ class Profile:
     price_min: float | None = None
     price_max: float | None = None
     min_days_left: int = 2                             # успеть собрать заявку и выпустить БГ
-    keywords: list[str] = field(default_factory=list)  # слова в предмете закупки (если нет ОКПД2)
+    keywords: list[str] = field(default_factory=list)  # ключевые слова, см. tenders/keywords.py
+    laws: list[str] = field(default_factory=lambda: ["44-ФЗ", "223-ФЗ", "615-ПП"])
 
 
 @dataclass
@@ -76,9 +79,16 @@ def guarantee_products(n: Notice) -> list[tuple[str, float | None]]:
         out.append(("БГ на гарантийные обязательства", n.warranty_guarantee))
     if not out and n.max_price:
         out.append(("БГ на исполнение контракта (размер уточнить в документации)", None))
-    if any(c.startswith(SMR_OKPD2) for c in n.okpd2):
+    if n.law == "615-ПП" and not n.warranty_guarantee:
+        out.append(("БГ на гарантийные обязательства (обычно требуется по 615-ПП)", None))
+    if any(c.startswith(SMR_OKPD2) for c in n.okpd2) or n.law == "615-ПП":
         out.append(("страхование СМР (если требует контракт)", None))
     return out
+
+
+@lru_cache(maxsize=256)
+def _terms(keywords: tuple[str, ...]):
+    return parse_query(list(keywords))
 
 
 def match_notice(n: Notice, p: Profile, now: datetime | None = None) -> Match | None:
@@ -93,21 +103,24 @@ def match_notice(n: Notice, p: Profile, now: datetime | None = None) -> Match | 
         reasons.append(f"регион: {REGIONS.get(n.region, n.region)}")
         score += 20
 
-    if p.okpd2:
-        hit = _okpd_hit(n.okpd2, p.okpd2)
-        if hit is None:
-            return None
+    if p.laws and n.law not in p.laws:
+        return None
+
+    terms = _terms(tuple(p.keywords)) if p.keywords else []
+    kw = search(n.text, terms) if terms else None
+    if kw and kw.excluded_by:
+        return None                                   # минус-слово
+    hit = _okpd_hit(n.okpd2, p.okpd2) if p.okpd2 else None
+    if hit is None and not (kw and kw.matched):
+        return None                                   # ни по кодам, ни по словам
+    if hit:
         reasons.append(f"ОКПД2 {hit}")
         score += 30 + min(len(hit), 12) * 2
-    elif p.keywords:
-        text = n.subject.lower()
-        words = [w for w in p.keywords if w.lower() in text]
-        if not words:
-            return None
-        reasons.append("в предмете: " + ", ".join(words))
-        score += 25
-    else:
-        return None   # без кодов и слов подбирать не из чего
+    if kw and kw.matched:
+        reasons.append("слова: " + ", ".join(kw.matched))
+        score += 20 + 5 * min(len(kw.matched), 4)
+    if n.law != "44-ФЗ":
+        reasons.append(n.law)
 
     if n.max_price is not None:
         if p.price_max and n.max_price > p.price_max:

@@ -1,5 +1,7 @@
 """Страница «Закупки» в кабинете и загрузка извещений в базу."""
 
+import re
+
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,8 +18,8 @@ class FakeEis:
     def __init__(self):
         self.calls = []
 
-    async def notices(self, region, day):
-        self.calls.append((region, day))
+    async def notices(self, region, day, laws):
+        self.calls.append((region, day, laws))
         if region == "77":
             n = parse_notice(XML, region=region)
             n.ends_at = datetime.now(timezone.utc) + timedelta(days=10)   # чтобы тест не устарел
@@ -31,6 +33,7 @@ def test_profile_sync_matches_and_guarantee(tmp_path):
         assert "Загрузка из ЕИС не настроена" in page and "Заполните коды ОКПД2" in page
 
         r = c.post("/tenders/profile", data={"okpd2": "43.91, 43.99", "regions": "77, 50",
+                                             "keywords": "крыша, -проект", "laws": ["44-ФЗ", "615-ПП"],
                                              "price_min": "1 000 000", "price_max": "", "min_days_left": "0"})
         assert r.url.path == "/tenders"
 
@@ -38,12 +41,15 @@ def test_profile_sync_matches_and_guarantee(tmp_path):
         sm = c.app.state.sessionmaker
         stats = c.portal.call(sync, sm, eis, date(2026, 11, 18))
         assert stats == {"50": 0, "77": 1}
+        assert eis.calls[0][2] == ("44-ФЗ", "615-ПП")
         # Повторная загрузка того же извещения не создаёт дубль.
         c.portal.call(sync, sm, eis, date(2026, 11, 18))
 
         page = c.get("/tenders").text
         assert "0373200000126000123" in page and "Капитальный ремонт кровли" in page
-        assert "625 000 ₽" in page and "ОКПД2 43.91" in page
+        assert "625 000 ₽" in page and "ОКПД2 43.91" in page and "слова: крыша" in page
+        boxes = dict(re.findall(r'name="laws" value="([^"]+)"\s*(checked)?', page))
+        assert boxes == {"44-ФЗ": "checked", "223-ФЗ": "", "615-ПП": "checked"}
 
         c.post("/tenders/0373200000126000123/guarantee")
         c.post("/tenders/0373200000126000123/guarantee")      # второй клик не дублирует заявку

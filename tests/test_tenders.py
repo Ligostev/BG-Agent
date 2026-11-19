@@ -98,8 +98,79 @@ def test_client_downloads_and_parses():
     assert [n.purchase_number for n in notices] == ["0373200000126000123"]
     assert notices[0].region == "77"
     posts = [r for r in seen if r.method == "POST"]
-    assert len(posts) == 3 and all(b"secret-token" in r.content for r in posts)
+    assert len(posts) == 11 and all(b"secret-token" in r.content for r in posts)
+    assert sum(b"<subsystemType>RI223</subsystemType>" in r.content for r in posts) == 7
     assert all(r.headers["individualPerson_token"] == "secret-token" for r in seen if r.method == "GET")
+
+
+def test_client_continues_after_unknown_doc_type():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if b"pprf615" in request.content:
+            return httpx.Response(500, content=b"<E><B><Fault><faultstring>cvc-enumeration-valid</faultstring></Fault></B></E>")
+        return httpx.Response(200, content=b"<E><B><r><noData>true</noData></r></B></E>")
+
+    async def run():
+        c = EisClient("t", min_interval=0, http=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                      doc_types={"615-ПП": ("PRIZ", ("pprf615NotificationEF",)),
+                                 "44-ФЗ": ("PRIZ", ("epNotificationEF2020",))})
+        out = [n async for n in c.notices("77", date(2026, 11, 18), ("615-ПП", "44-ФЗ"))]
+        await c.aclose()
+        return out
+
+    assert asyncio.run(run()) == []
+    assert len(seen) == 2       # после ошибки по 615-ПП запрос по 44-ФЗ всё равно ушёл
+
+
+def test_doc_types_from_env():
+    from tenders.eis import doc_types_from_env
+    d = doc_types_from_env("615-ПП=PRIZ:pprf615NotificationEF2020, pprf615NotificationPO; мусор")
+    assert d["615-ПП"] == ("PRIZ", ("pprf615NotificationEF2020", "pprf615NotificationPO"))
+    assert d["44-ФЗ"][0] == "PRIZ"
+
+
+def test_parse_223():
+    n = parse_notice((Path(__file__).parent / "fixtures" / "purchaseNoticeAE.xml").read_bytes(), region="77")
+    assert n.law == "223-ФЗ" and n.purchase_number == "32615000001"
+    assert n.subject.startswith("Выполнение работ по ремонту кровли")
+    assert n.customer == "АО «ВОДОКАНАЛ»" and n.customer_inn == "7702000002"
+    assert n.max_price == 5_000_000                       # сумма лотов
+    assert n.okpd2 == ["43.91.19.110"] and "Работы кровельные прочие" in n.okpd2_names
+    assert n.ends_at.isoformat() == "2026-12-01T10:00:00+03:00"
+    assert n.etp == "РТС-тендер" and n.placing_way == "Аукцион в электронной форме"
+    m = match_notice(n, Profile(keywords=["крыша"]), NOW)
+    assert m and "223-ФЗ" in m.reasons
+    assert dict(m.products)["БГ на исполнение контракта (размер уточнить в документации)"] is None
+
+
+def test_parse_615():
+    xml = XML.replace(b"epNotificationEF2020", b"pprf615NotificationEF")
+    n = parse_notice(xml, region="77")
+    assert n.law == "615-ПП" and n.purchase_number == "0373200000126000123"
+    products = [p for p, _ in match_notice(n, Profile(okpd2=["43"]), NOW).products]
+    assert "страхование СМР (если требует контракт)" in products
+    assert match_notice(n, Profile(okpd2=["43"], laws=["44-ФЗ"]), NOW) is None
+
+
+def test_keywords():
+    from tenders.keywords import parse_query, search
+    terms = parse_query("кровля, капитальный ремонт, асфальт|щебень, -проект")
+    assert search("Капитальный ремонт крыши здания", terms).matched == ["кровля", "капитальный ремонт"]
+    assert search("Ремонт кровельного покрытия", terms).matched == ["кровля"]
+    assert search("Поставка асфальтобетонной смеси", terms).matched == ["асфальт|щебень"]
+    assert search("Разработка проектной документации на капремонт кровли", terms).excluded_by == "проект"
+    assert search("Поставка бумаги по договору", terms).matched == []
+    assert search("Монтаж систем видеонаблюдения", parse_query("СВН")).matched == ["СВН"]
+
+
+def test_keywords_and_minus_in_profile():
+    n = parse_notice(XML, region="77")
+    assert match_notice(n, Profile(keywords=["кровля"]), NOW).reasons[0] == "слова: кровля"
+    assert match_notice(n, Profile(okpd2=["43"], keywords=["-школ"]), NOW) is None
+    m = match_notice(n, Profile(okpd2=["41"], keywords=["крыша"]), NOW)   # код мимо, слово подошло
+    assert m and "слова: крыша" in m.reasons
 
 
 def test_client_requires_token():

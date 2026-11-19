@@ -15,8 +15,17 @@
       <input type="text" name="okpd2" value="{{ profile.okpd2 | join(', ') }}"></label>
     <label>Регионы заказчиков <span class="muted">(коды: 77 — Москва, 50 — Московская обл., 78 — СПб)</span>
       <input type="text" name="regions" value="{{ profile.regions | join(', ') }}"></label>
-    <label>Слова в предмете закупки <span class="muted">(если ОКПД2 не знаете)</span>
+    <label>Ключевые слова <span class="muted">(через запятую; словоформы и синонимы учитываются:
+      «кровля» найдёт и «кровельные работы», и «ремонт крыши»; «асфальт|щебень» — любое из слов;
+      «-проект» — исключить закупки с этим словом)</span>
       <input type="text" name="keywords" value="{{ profile.keywords | join(', ') }}"></label>
+    <div style="margin-bottom:10px">Законы:
+      {% set chosen = profile.laws if profile.laws is not none else laws %}
+      {% for law in laws %}
+        <label style="display:inline; margin-right:12px"><input type="checkbox" name="laws" value="{{ law }}"
+          {% if law in chosen %}checked{% endif %}> {{ law }}</label>
+      {% endfor %}
+    </div>
     <div class="row">
       <label>НМЦК от, ₽ <input type="text" name="price_min" inputmode="numeric"
              value="{{ '%.0f' % profile.price_min if profile.price_min else '' }}"></label>
@@ -43,7 +52,7 @@
       <td style="width:auto">
         <a href="{{ n.url or eis_url(n.purchase_number) }}" target="_blank" rel="noopener">№ {{ n.purchase_number }}</a>
         <div>{{ n.subject }}</div>
-        <div class="muted">{{ n.customer }}{% if n.placing_way %} · {{ n.placing_way }}{% endif %}</div>
+        <div class="muted">{{ n.law }} · {{ n.customer }}{% if n.placing_way %} · {{ n.placing_way }}{% endif %}</div>
         <div class="muted">{{ m.reasons | join(' · ') }}</div>
       </td>
       <td style="width:30%">
@@ -60,7 +69,7 @@
   {% elif profile.okpd2 or profile.keywords %}
   <p class="muted">Пока ничего не нашлось. Новые закупки подгружаются каждое утро.</p>
   {% else %}
-  <p class="muted">Заполните коды ОКПД2 или слова, и здесь появятся закупки.</p>
+  <p class="muted">Заполните коды ОКПД2 или ключевые слова, и здесь появятся закупки.</p>
   {% endif %}
 </div>
 

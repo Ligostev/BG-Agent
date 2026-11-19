@@ -12,6 +12,7 @@ from tenders import Profile, match_notice
 from tenders.imports import load_contracts
 from tenders.match import Match, guarantee_products, parse_codes, parse_regions, profile_from_contracts
 from tenders.notice import Notice, eis_url
+from tenders.eis import LAWS
 from tenders.regions import REGIONS
 
 from .deps import get_db, web_user
@@ -29,12 +30,14 @@ def money(v) -> str:
 
 async def get_profile(db: AsyncSession, user: User) -> TenderProfile:
     row = (await db.execute(select(TenderProfile).where(TenderProfile.user_id == user.id))).scalar_one_or_none()
-    return row or TenderProfile(user_id=user.id, okpd2=[], regions=[], keywords=[], min_days_left=2)
+    return row or TenderProfile(user_id=user.id, okpd2=[], regions=[], keywords=[], laws=list(LAWS),
+                                min_days_left=2)
 
 
 def to_profile(row: TenderProfile) -> Profile:
     return Profile(okpd2=list(row.okpd2 or []), regions=list(row.regions or []),
-                   keywords=list(row.keywords or []), price_min=row.price_min, price_max=row.price_max,
+                   keywords=list(row.keywords or []),
+                   laws=list(row.laws) if row.laws is not None else list(LAWS), price_min=row.price_min, price_max=row.price_max,
                    min_days_left=row.min_days_left if row.min_days_left is not None else 2)
 
 
@@ -69,7 +72,7 @@ async def page(request: Request, db: AsyncSession, user: User, status_code: int 
     eis_ready = bool(request.app.state.settings.eis_token)
     return render(request, "tenders.html", status_code, user=user, profile=row, matches=matches,
                   requests=requests, regions=REGIONS, money=money, eis_url=eis_url,
-                  eis_ready=eis_ready, **ctx)
+                  eis_ready=eis_ready, laws=LAWS, **ctx)
 
 
 @router.get("/tenders")
@@ -80,12 +83,13 @@ async def tenders_page(request: Request, user: User = Depends(web_user), db: Asy
 @router.post("/tenders/profile")
 async def save_profile(request: Request, okpd2: str = Form(""), regions: str = Form(""),
                        keywords: str = Form(""), price_min: str = Form(""), price_max: str = Form(""),
-                       min_days_left: int = Form(2), user: User = Depends(web_user),
+                       min_days_left: int = Form(2), laws: list[str] = Form(default=[]), user: User = Depends(web_user),
                        db: AsyncSession = Depends(get_db)):
     row = await get_profile(db, user)
     row.okpd2 = parse_codes(okpd2)
     row.regions = parse_regions(regions)
-    row.keywords = [w.strip() for w in keywords.replace(";", ",").split(",") if w.strip()]
+    row.keywords = [w.strip() for w in keywords.replace(";", ",").replace("\n", ",").split(",") if w.strip()]
+    row.laws = [x for x in LAWS if x in laws] or list(LAWS)
     row.price_min, row.price_max = _float(price_min), _float(price_max)
     row.min_days_left = max(0, min(min_days_left, 60))
     db.add(row)
