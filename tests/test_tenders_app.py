@@ -84,3 +84,44 @@ def test_profile_import_from_contracts(tmp_path):
 def test_tenders_need_login(tmp_path):
     with make_client(tmp_path, [FakeFns()]) as c:
         assert c.get("/tenders").url.path == "/login"
+
+
+class FakeEmbedder:
+    """Вектор «про кровлю / про что-то другое» вместо настоящей модели."""
+
+    def __init__(self):
+        self.calls = []
+
+    def embed(self, texts):
+        self.calls.append(texts)
+        return [[1.0, 0.0] if ("кров" in t.lower() or "крыш" in t.lower()) else [0.0, 1.0] for t in texts]
+
+
+def test_semantic_profile(tmp_path):
+    from app.tenders_sync import embed_pending
+    settings_kw = {"embed_model": "fake", "embed_threshold": 0.8}
+    with make_client(tmp_path, [FakeFns()], **settings_kw) as c:
+        register(c)
+        c.post("/tenders/profile", data={"description": "Ремонт крыш и гидроизоляция", "regions": "77",
+                                         "min_days_left": "0"})
+        page = c.get("/tenders").text
+        assert "Описание учтём в течение 15 минут" in page
+
+        sm = c.app.state.sessionmaker
+        c.portal.call(sync, sm, FakeEis(), date(2026, 11, 18))
+        emb = FakeEmbedder()
+        done = c.portal.call(embed_pending, sm, lambda: emb)
+        assert done == {"profiles": 1, "notices": 1}
+        # Повторный запуск ничего не считает и даже не загружает модель.
+        assert c.portal.call(embed_pending, sm, lambda: (_ for _ in ()).throw(AssertionError("модель не нужна"))) \
+            == {"profiles": 0, "notices": 0}
+
+        page = c.get("/tenders").text
+        assert "0373200000126000123" in page and "по смыслу: 100%" in page
+        assert "Описание учтём" not in page
+
+
+def test_semantic_off_message(tmp_path):
+    with make_client(tmp_path, [FakeFns()]) as c:
+        register(c)
+        assert "Подбор по смыслу на сервере пока не включён" in c.get("/tenders").text

@@ -217,3 +217,17 @@ def test_profile_from_contracts_csv():
 def test_load_contracts_rejects_unknown_table():
     with pytest.raises(ValueError):
         load_contracts("a;b\n1;2\n".encode(), "x.csv")
+
+
+def test_semantic_match():
+    from tenders.semantic import cosine
+    assert cosine([1, 0], [1, 0]) == 1 and cosine([1, 0], [0, 1]) == 0
+    assert cosine([1, 0], [1, 0, 0]) == 0 and cosine(None, [1]) == 0
+    n = parse_notice(XML, region="77")
+    p = Profile(description="мягкая кровля", embedding=[1.0, 0.2])
+    assert match_notice(n, p, NOW) is None                                  # вектора закупки нет
+    m = match_notice(n, p, NOW, vector=[0.9, 0.3])
+    assert m and m.reasons[0].startswith("по смыслу: ")
+    assert match_notice(n, p, NOW, vector=[0.0, 1.0]) is None               # далеко по смыслу
+    p.keywords = ["-школ"]
+    assert match_notice(n, p, NOW, vector=[0.9, 0.3]) is None               # минус-слово сильнее

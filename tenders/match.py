@@ -16,6 +16,7 @@ from .imports import Contract
 from .keywords import parse_query, search
 from .notice import Notice
 from .regions import REGIONS
+from .semantic import DEFAULT_THRESHOLD, cosine
 
 OKPD_RE = re.compile(r"(?<![\d.])\d{2}(?:\.\d{1,2}(?:\.\d{2}(?:\.\d{3})?)?)?(?![\d])")
 SMR_OKPD2 = ("41.", "42.", "43.")
@@ -30,6 +31,9 @@ class Profile:
     min_days_left: int = 2                             # успеть собрать заявку и выпустить БГ
     keywords: list[str] = field(default_factory=list)  # ключевые слова, см. tenders/keywords.py
     laws: list[str] = field(default_factory=lambda: ["44-ФЗ", "223-ФЗ", "615-ПП"])
+    description: str = ""                              # своими словами, что делает клиент
+    embedding: list[float] | None = None               # вектор описания (tenders/semantic.py)
+    semantic_threshold: float = DEFAULT_THRESHOLD
 
 
 @dataclass
@@ -91,8 +95,13 @@ def _terms(keywords: tuple[str, ...]):
     return parse_query(list(keywords))
 
 
-def match_notice(n: Notice, p: Profile, now: datetime | None = None) -> Match | None:
-    """Закупка подходит клиенту -> Match с причинами, иначе None."""
+def match_notice(n: Notice, p: Profile, now: datetime | None = None,
+                 vector: list[float] | None = None) -> Match | None:
+    """Закупка подходит клиенту -> Match с причинами, иначе None.
+
+    vector — вектор текста закупки; если он и вектор описания клиента есть,
+    закупка подходит и по смыслу.
+    """
     now = now or datetime.now(timezone.utc)
     reasons: list[str] = []
     score = 0
@@ -111,14 +120,19 @@ def match_notice(n: Notice, p: Profile, now: datetime | None = None) -> Match | 
     if kw and kw.excluded_by:
         return None                                   # минус-слово
     hit = _okpd_hit(n.okpd2, p.okpd2) if p.okpd2 else None
-    if hit is None and not (kw and kw.matched):
-        return None                                   # ни по кодам, ни по словам
+    similarity = cosine(p.embedding, vector) if p.embedding and vector else 0.0
+    semantic = similarity >= p.semantic_threshold
+    if hit is None and not (kw and kw.matched) and not semantic:
+        return None                                   # ни по кодам, ни по словам, ни по смыслу
     if hit:
         reasons.append(f"ОКПД2 {hit}")
         score += 30 + min(len(hit), 12) * 2
     if kw and kw.matched:
         reasons.append("слова: " + ", ".join(kw.matched))
         score += 20 + 5 * min(len(kw.matched), 4)
+    if semantic:
+        reasons.append(f"по смыслу: {similarity:.0%}")
+        score += int(similarity * 40)
     if n.law != "44-ФЗ":
         reasons.append(n.law)
 

@@ -86,6 +86,11 @@ class TenderProfile(Base):
     regions: Mapped[list] = mapped_column(JSON, default=list)
     keywords: Mapped[list] = mapped_column(JSON, default=list)
     laws: Mapped[list] = mapped_column(JSON, default=lambda: ["44-ФЗ", "223-ФЗ", "615-ПП"])
+    # Описание своими словами и его вектор для подбора по смыслу. Вектор считает задача
+    # app.tenders_sync; embedding_text — описание, по которому он посчитан.
+    description: Mapped[str | None] = mapped_column(Text)
+    embedding: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
+    embedding_text: Mapped[str | None] = mapped_column(Text)
     price_min: Mapped[float | None] = mapped_column(Float)
     price_max: Mapped[float | None] = mapped_column(Float)
     min_days_left: Mapped[int] = mapped_column(Integer, default=2)
@@ -103,6 +108,7 @@ class TenderNotice(Base):
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     max_price: Mapped[float | None] = mapped_column(Float)
     data: Mapped[dict] = mapped_column(JSON)
+    embedding: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

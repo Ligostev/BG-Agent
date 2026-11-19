@@ -34,8 +34,12 @@ async def get_profile(db: AsyncSession, user: User) -> TenderProfile:
                                 min_days_left=2)
 
 
-def to_profile(row: TenderProfile) -> Profile:
+def to_profile(row: TenderProfile, threshold: float | None = None) -> Profile:
+    fresh = (row.description or "") == (row.embedding_text or "")
     return Profile(okpd2=list(row.okpd2 or []), regions=list(row.regions or []),
+                   description=row.description or "",
+                   embedding=list(row.embedding) if (row.embedding and fresh) else None,
+                   semantic_threshold=threshold if threshold is not None else 0.6,
                    keywords=list(row.keywords or []),
                    laws=list(row.laws) if row.laws is not None else list(LAWS), price_min=row.price_min, price_max=row.price_max,
                    min_days_left=row.min_days_left if row.min_days_left is not None else 2)
@@ -48,7 +52,7 @@ async def find_matches(db: AsyncSession, profile: Profile, limit: int = 100) -> 
         q = q.where(TenderNotice.region.in_(profile.regions))
     matches = []
     for row in (await db.execute(q)).scalars():
-        m = match_notice(Notice.from_dict(row.data), profile, now)
+        m = match_notice(Notice.from_dict(row.data), profile, now, vector=row.embedding)
         if m:
             matches.append(m)
     matches.sort(key=lambda m: (-m.score, m.notice.ends_at or now))
@@ -65,14 +69,17 @@ def _float(raw: str) -> float | None:
 
 async def page(request: Request, db: AsyncSession, user: User, status_code: int = 200, **ctx):
     row = await get_profile(db, user)
-    profile = to_profile(row)
-    matches = await find_matches(db, profile) if (profile.okpd2 or profile.keywords) else []
+    settings = request.app.state.settings
+    profile = to_profile(row, settings.embed_threshold)
+    matches = await find_matches(db, profile) if (profile.okpd2 or profile.keywords or profile.embedding) else []
+    semantic = ("off" if not settings.embed_model else
+                "pending" if (row.description or "") != (row.embedding_text or "") else "ready")
     requests = (await db.execute(select(GuaranteeRequest).where(GuaranteeRequest.user_id == user.id)
                                  .order_by(GuaranteeRequest.id.desc()).limit(20))).scalars().all()
     eis_ready = bool(request.app.state.settings.eis_token)
     return render(request, "tenders.html", status_code, user=user, profile=row, matches=matches,
                   requests=requests, regions=REGIONS, money=money, eis_url=eis_url,
-                  eis_ready=eis_ready, laws=LAWS, **ctx)
+                  eis_ready=eis_ready, laws=LAWS, semantic=semantic, **ctx)
 
 
 @router.get("/tenders")
@@ -82,6 +89,7 @@ async def tenders_page(request: Request, user: User = Depends(web_user), db: Asy
 
 @router.post("/tenders/profile")
 async def save_profile(request: Request, okpd2: str = Form(""), regions: str = Form(""),
+                       description: str = Form(""),
                        keywords: str = Form(""), price_min: str = Form(""), price_max: str = Form(""),
                        min_days_left: int = Form(2), laws: list[str] = Form(default=[]), user: User = Depends(web_user),
                        db: AsyncSession = Depends(get_db)):
@@ -90,6 +98,8 @@ async def save_profile(request: Request, okpd2: str = Form(""), regions: str = F
     row.regions = parse_regions(regions)
     row.keywords = [w.strip() for w in keywords.replace(";", ",").replace("\n", ",").split(",") if w.strip()]
     row.laws = [x for x in LAWS if x in laws] or list(LAWS)
+    # Вектор пересчитает задача app.tenders_sync --profiles-only (раз в 15 минут).
+    row.description = " ".join(description.split())[:2000] or None
     row.price_min, row.price_max = _float(price_min), _float(price_max)
     row.min_days_left = max(0, min(min_days_left, 60))
     db.add(row)
@@ -110,7 +120,7 @@ async def import_contracts(request: Request, file: UploadFile, user: User = Depe
     if not contracts:
         return await page(request, db, user, 400, error="В файле нет строк с контрактами")
     row = await get_profile(db, user)
-    p = profile_from_contracts(contracts, to_profile(row))
+    p = profile_from_contracts(contracts, to_profile(row, request.app.state.settings.embed_threshold))
     row.okpd2, row.regions = p.okpd2, p.regions
     row.price_min, row.price_max = p.price_min, p.price_max
     db.add(row)

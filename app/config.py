@@ -18,6 +18,10 @@ class Settings:
     captcha_timeout: float = field(default_factory=lambda: float(os.environ.get("CAPTCHA_TIMEOUT", "180")))
     # Токен сервиса отдачи документов ЕИС (zakupki.gov.ru/pmd/auth/welcome) для подбора закупок.
     eis_token: str = field(default_factory=lambda: os.environ.get("EIS_TOKEN", ""))
+    # Подбор по смыслу: локальная модель векторов (tenders/semantic.py). Пусто — выключено.
+    embed_model: str = field(default_factory=lambda: os.environ.get("EMBED_MODEL", ""))
+    embed_threshold: float = field(default_factory=lambda: float(os.environ.get("EMBED_THRESHOLD", "0.6")))
+    embed_cache_dir: str = field(default_factory=lambda: os.environ.get("EMBED_CACHE_DIR", ""))
 
 
 settings = Settings()

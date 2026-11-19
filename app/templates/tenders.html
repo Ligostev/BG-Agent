@@ -15,6 +15,13 @@
       <input type="text" name="okpd2" value="{{ profile.okpd2 | join(', ') }}"></label>
     <label>Регионы заказчиков <span class="muted">(коды: 77 — Москва, 50 — Московская обл., 78 — СПб)</span>
       <input type="text" name="regions" value="{{ profile.regions | join(', ') }}"></label>
+    <label>Что вы делаете, своими словами <span class="muted">(подбор по смыслу: найдутся закупки
+      с похожим предметом, даже если слова другие)</span>
+      <textarea name="description" rows="2" style="width:100%; padding:10px 12px; border:1px solid var(--line);
+        border-radius:8px; font:inherit">{{ profile.description or '' }}</textarea>
+      {% if semantic == "off" %}<span class="muted">Подбор по смыслу на сервере пока не включён.</span>
+      {% elif semantic == "pending" and profile.description %}<span class="muted">Описание учтём в течение 15 минут.</span>{% endif %}
+    </label>
     <label>Ключевые слова <span class="muted">(через запятую; словоформы и синонимы учитываются:
       «кровля» найдёт и «кровельные работы», и «ремонт крыши»; «асфальт|щебень» — любое из слов;
       «-проект» — исключить закупки с этим словом)</span>
@@ -66,10 +73,10 @@
     </tr>
     {% endfor %}
   </table>
-  {% elif profile.okpd2 or profile.keywords %}
+  {% elif profile.okpd2 or profile.keywords or profile.description %}
   <p class="muted">Пока ничего не нашлось. Новые закупки подгружаются каждое утро.</p>
   {% else %}
-  <p class="muted">Заполните коды ОКПД2 или ключевые слова, и здесь появятся закупки.</p>
+  <p class="muted">Заполните коды ОКПД2, ключевые слова или описание, и здесь появятся закупки.</p>
   {% endif %}
 </div>
 
