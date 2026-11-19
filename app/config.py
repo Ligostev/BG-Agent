@@ -16,6 +16,8 @@ class Settings:
     # Общий секрет, с которым Telegram-бот ходит в API от имени своих пользователей.
     bot_api_token: str = field(default_factory=lambda: os.environ.get("BOT_API_TOKEN", ""))
     captcha_timeout: float = field(default_factory=lambda: float(os.environ.get("CAPTCHA_TIMEOUT", "180")))
+    # Токен сервиса отдачи документов ЕИС (zakupki.gov.ru/pmd/auth/welcome) для подбора закупок.
+    eis_token: str = field(default_factory=lambda: os.environ.get("EIS_TOKEN", ""))
 
 
 settings = Settings()

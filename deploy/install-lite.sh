@@ -70,8 +70,32 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 UNIT
+# Каждое утро подгружаем вчерашние извещения ЕИС по регионам из профилей клиентов (нужен EIS_TOKEN в env).
+cat > /etc/systemd/system/bg-agent-tenders.service <<UNIT
+[Unit]
+Description=BG-Agent: загрузка закупок из ЕИС
+
+[Service]
+Type=oneshot
+User=bg
+WorkingDirectory=$SRC
+EnvironmentFile=$HOME_DIR/env
+ExecStart=$HOME_DIR/venv/bin/python -m app.tenders_sync
+UNIT
+cat > /etc/systemd/system/bg-agent-tenders.timer <<UNIT
+[Unit]
+Description=BG-Agent: загрузка закупок из ЕИС каждое утро
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
 systemctl daemon-reload
 systemctl enable -q bg-agent
+systemctl enable -q --now bg-agent-tenders.timer
 systemctl restart bg-agent
 
 echo "== HTTPS"

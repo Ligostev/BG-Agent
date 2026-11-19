@@ -22,7 +22,8 @@
     button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff;
              font:inherit; cursor:pointer; }
     button.link { background:none; color:var(--muted); padding:0; }
-    .row { display:flex; gap:8px; } .row input { flex:1; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; } .row input, .row label { flex:1; }
+    form.grid label { display:block; margin-bottom:10px; }
     .error { color:var(--bad); margin:8px 0 0; }
     .muted { color:var(--muted); }
     table { width:100%; border-collapse:collapse; }
@@ -38,7 +39,8 @@
 </head>
 <body>
   <header><div class="wrap">
-    <a class="brand" href="/">Проверка контрагентов</a>
+    <nav><a class="brand" href="/">Проверка контрагентов</a>
+      {% if user %}&nbsp;·&nbsp;<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
     {% if user %}
       <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
         <button class="link" type="submit">Выйти</button></form>
