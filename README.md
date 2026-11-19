@@ -136,8 +136,8 @@ python -m pytest -q
 # на сервере: токен в настройки и проверка доступа
 sudo nano /opt/bg-agent/env                 # добавить строку EIS_TOKEN=...
 sudo systemctl restart bg-agent
-cd /opt/bg-agent/app-src && sudo -u bg env $(sudo cat /opt/bg-agent/env | xargs) \
-  /opt/bg-agent/venv/bin/python -m tenders --region 77 --limit 5
+sudo -u bg bash -c 'set -a; . /opt/bg-agent/env; cd /opt/bg-agent/app-src &&
+  /opt/bg-agent/venv/bin/python -m tenders --region 77 --limit 5'
 ```
 
 Каждое утро в 05:30 по Москве таймер `bg-agent-tenders.timer` запускает
