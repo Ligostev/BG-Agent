@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Сотрудники{% endblock %}
+{% block wrapclass %} wide{% endblock %}
+{% block content %}
+<div class="card">
+  <h3 style="margin-top:0">Сотрудники</h3>
+  <p class="muted">Менеджер видит своих клиентов и тех, у кого ещё нет ответственного; администратор видит всех
+    и может передавать клиентов. Новый сотрудник сначала регистрируется в кабинете, потом ему здесь выдаётся роль.</p>
+  <table>
+    {% for s in staff %}
+    <tr><td style="width:auto">{{ s.email or 'Telegram' }}{% if s.email in admin_emails %} <span class="muted">(из ADMIN_EMAILS)</span>{% endif %}</td>
+      <td>{{ 'Администратор' if s.role == 'admin' else 'Менеджер' }}</td>
+      <td class="muted">клиентов: {{ counts.get(s.id, 0) }}</td>
+      <td class="muted">{{ 'Telegram подключён' if s.telegram_id else 'без Telegram' }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Без ответственного: {{ counts.get(None, 0) }}</p>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">Выдать или снять роль</h3>
+  <form method="post" action="/crm/staff" class="row">
+    <input type="email" name="email" placeholder="email сотрудника" required>
+    <select name="role" style="flex:0"><option value="manager">Менеджер</option><option value="admin">Администратор</option>
+      <option value="client">Снять доступ (обычный клиент)</option></select>
+    <button type="submit" style="flex:0">Сохранить</button>
+  </form>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</div>
+{% endblock %}

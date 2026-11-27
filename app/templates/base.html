@@ -17,7 +17,7 @@
     a { color:var(--accent); text-decoration:none; }
     .brand { font-weight:600; color:var(--text); }
     .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:16px 0; }
-    input[type=text], input[type=email], input[type=password] {
+    input[type=text], input[type=email], input[type=password], input[type=datetime-local], input[type=date] {
       width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
     button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff;
              font:inherit; cursor:pointer; }
@@ -50,7 +50,7 @@
 <body>
   <header><div class="wrap">
     <nav><a class="brand" href="/">Проверка контрагентов</a>
-      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · {% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
+      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · {% if user.role == "admin" %}<a href="/crm/staff">Сотрудники</a> · {% endif %}{% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
     {% if user %}
       <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
         <button class="link" type="submit">Выйти</button></form>

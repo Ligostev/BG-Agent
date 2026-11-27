@@ -186,3 +186,45 @@ def test_tasks_and_reminders(tmp_path):
 
     assert parse_due("2026-11-28T10:00") == datetime(2026, 11, 28, 7, 0, tzinfo=timezone.utc)
     assert parse_due("2026-11-28").hour == 7 and parse_due("мусор") is None
+
+
+def test_manager_sees_own_and_unassigned(tmp_path):
+    with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
+        for email in ("m1@example.com", "m2@example.com"):
+            register(c, email)
+            c.post("/logout")
+        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        assert "Пусть сначала" not in c.post("/crm/staff", data={"email": "M1@example.com", "role": "manager"}).text
+        c.post("/crm/staff", data={"email": "m2@example.com", "role": "manager"})
+        assert "не найден" in c.post("/crm/staff", data={"email": "x@example.com", "role": "manager"}).text
+        assert "ADMIN_EMAILS" in c.post("/crm/staff", data={"email": ADMIN, "role": "client"}).text
+        staff = c.get("/crm/staff").text
+        assert "m1@example.com" in staff and "m2@example.com" in staff
+        pool = c.post("/crm/clients", data={"title": "Общий клиент"}).url.path   # у админа без ответственного
+
+        login(c, "m1@example.com")
+        assert c.get("/crm/staff").status_code == 403
+        own = c.post("/crm/clients", data={"inn": INN, "title": "Клиент первого"}).url.path
+        c.post("/crm/deals", data={"client_id": own.rsplit("/", 1)[1], "product": "БГ на исполнение контракта"})
+        c.post("/crm/tasks", data={"title": "Задача первого", "client_id": own.rsplit("/", 1)[1], "remind": "1"})
+        assert c.post(own, data={"title": "Клиент первого", "inn": INN, "manager_id": "3"}).status_code == 403
+        assert c.get(pool).status_code == 200
+
+        login(c, "m2@example.com")
+        listing = c.get("/crm/clients").text
+        assert "Общий клиент" in listing and "Клиент первого" not in listing
+        assert c.get(own).status_code == 404
+        assert c.get("/crm/deals/1").status_code == 404 and "Клиент первого" not in c.get("/crm/deals").text
+        assert "Задача первого" not in c.get("/crm/tasks").text
+        assert c.post("/crm/tasks/1/done").status_code == 404
+        assert "закреплён за другим менеджером" in c.post("/crm/clients", data={"inn": INN}).text
+
+        login(c, ADMIN)
+        assert "Клиент первого" in c.get("/crm/clients").text
+        assert "Задача первого" in c.get("/crm/tasks?who=all").text
+        # Снятие роли возвращает клиентов в общий список.
+        c.post("/crm/staff", data={"email": "m1@example.com", "role": "client"})
+        login(c, "m2@example.com")
+        assert "Клиент первого" in c.get("/crm/clients").text
+        login(c, "m1@example.com")
+        assert c.get("/crm/deals").status_code == 403

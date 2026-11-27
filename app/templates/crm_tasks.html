@@ -3,10 +3,10 @@
 {% block wrapclass %} wide{% endblock %}
 {% block content %}
 <div class="card">
-  <div class="tabs">
+  {% if user.role == 'admin' %}<div class="tabs">
     <a href="/crm/tasks" class="{{ 'on' if who != 'all' }}">Мои и общие</a>
     <a href="/crm/tasks?who=all" class="{{ 'on' if who == 'all' }}">Все сотрудники</a>
-  </div>
+  </div>{% endif %}
   {% for name, items in groups.items() %}{% if items or name != 'Без срока' %}
   <div class="stage {{ 'r-error' if name == 'Просрочено' and items }}">{{ name }} <span class="muted">· {{ items | length }}</span></div>
   {% if items %}
