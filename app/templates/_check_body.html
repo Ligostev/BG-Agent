@@ -28,7 +28,7 @@
         <p class="{{ 'r-error' if r.data.flagged else 'r-found' }}"><b>{{ 'Есть признаки банкротства' if r.data.flagged else 'Признаков банкротства не найдено' }}</b></p>
       {% endif %}
       {% if r.source != "bankrot" and r.data and r.data.verdict is defined %}
-        <p class="{{ 'r-error' if r.data.flagged else 'r-found' }}"><b>{{ r.data.verdict }}</b></p>
+        <p class="{{ 'r-error' if r.data.flagged else ('r-warn' if r.data.unavailable else 'r-found') }}"><b>{{ r.data.verdict }}</b></p>
       {% endif %}
       <table>{% for label, value in r.summary %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
     {% elif r.status == "not_found" %}
