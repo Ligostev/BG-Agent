@@ -8,10 +8,10 @@ import re
 from datetime import date
 from pathlib import Path
 
-from bankrot import extract_parties
 from fnsdata import DisqualifiedRegistry, OpenDataset, TaxOffenceIndex, build_taxoffence_index
 
 from . import SourceContext, SourceData
+from .parties import related_parties, subject
 
 DISQUALIFIED = "7707329152-registerdisqualified"
 TAXOFFENCE = "7707329152-taxoffence"
@@ -21,15 +21,11 @@ def default_dir() -> str:
     return os.environ.get("FNS_OPENDATA_DIR", "./data/fns-opendata")
 
 
-def _subject(ctx: SourceContext) -> tuple[dict, str, dict | None]:
-    fns = ctx.previous.get("fns")
-    identity = fns.identity if fns and fns.found else {}
+def _subject(ctx: SourceContext) -> tuple[dict, str]:
+    identity = subject(ctx)
     query = re.sub(r"\D", "", ctx.query)
     inn = identity.get("inn") or (query if len(query) in (10, 12) else "")
-    card = None
-    if fns and fns.found and isinstance(fns.data, dict):
-        card = {"hit": fns.data.get("hit"), "card": fns.data.get("card")}
-    return identity, inn, card
+    return identity, inn
 
 
 def _stale(ds: OpenDataset) -> list[tuple[str, str]]:
@@ -59,13 +55,12 @@ class DisqualifiedSource:
         return self._registry
 
     async def fetch(self, ctx: SourceContext) -> SourceData:
-        identity, inn, card = _subject(ctx)
+        identity, inn = _subject(ctx)
         reg = await self.registry()
         today = date.today()
-        people = []
-        if card:
-            people = [p for p in extract_parties(card, exclude={inn}, limit=self.max_related)
-                      if p.kind == "person"]
+        # Проверка по ФИО, поэтому годится и руководитель без ИНН из базовой карточки DaData.
+        people = [p for p in related_parties(ctx, exclude={inn}, limit=self.max_related,
+                                             with_inn=False) if p.kind == "person"]
 
         by_org = reg.by_org(inn) if inn else []
         matches = []  # (лицо из карточки, запись реестра)
@@ -98,7 +93,7 @@ class DisqualifiedSource:
             rows.append((f"{who} — совпадение по ФИО ({'действует' if r.active(today) else 'истёк'})",
                          r.describe() + ". Сверьте дату рождения, может быть однофамилец"))
         if people:
-            rows.append(("Проверено лиц из карточки ФНС", str(len(people))))
+            rows.append(("Проверено лиц из карточки", str(len(people))))
         rows.append(("Реестр ФНС", f"{len(reg)} записей"))
         rows += _stale(self.dataset)
         data = {"flagged": flagged, "verdict": verdict,
@@ -131,7 +126,7 @@ class TaxOffenceSource:
         return index
 
     async def fetch(self, ctx: SourceContext) -> SourceData:
-        _, inn, _ = _subject(ctx)
+        _, inn = _subject(ctx)
         if len(inn) != 10:
             return SourceData(found=False)  # набор только по организациям
         index = await self.index()

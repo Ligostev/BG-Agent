@@ -22,6 +22,9 @@ class SourceData:
     data: dict | None = None
     # Поля, которые источник знает о контрагенте точно: title, inn, ogrn, kind.
     identity: dict[str, str] = field(default_factory=dict)
+    # Источник решил не работать для этой проверки (например, pb.nalog.ru в режиме
+    # «только запасной», когда DaData уже ответила): в отчёт он не попадает.
+    skipped: bool = False
 
 
 @dataclass
