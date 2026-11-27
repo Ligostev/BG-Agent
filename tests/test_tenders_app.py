@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from app.models import GuaranteeRequest, TenderNotice
+from app.models import Deal, TenderNotice
 from app.tenders_sync import sync
 from tenders import parse_notice
 
@@ -59,7 +59,7 @@ def test_profile_sync_matches_and_guarantee(tmp_path):
             from sqlalchemy import func, select
             async with sm() as db:
                 n = await db.scalar(select(func.count()).select_from(TenderNotice))
-                reqs = (await db.execute(select(GuaranteeRequest))).scalars().all()
+                reqs = (await db.execute(select(Deal))).scalars().all()
                 return n, sorted(r.product for r in reqs)
 
         n, products = c.portal.call(counts)

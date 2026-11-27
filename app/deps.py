@@ -32,6 +32,12 @@ async def web_user(user: User | None = Depends(session_user)) -> User:
     return user
 
 
+async def staff_user(user: User = Depends(web_user)) -> User:
+    if not user.is_staff:
+        raise HTTPException(403, "Раздел только для сотрудников")
+    return user
+
+
 async def api_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -68,7 +74,7 @@ async def create_check(request: Request, db: AsyncSession, user: User, query: st
 
 async def own_check(check_id: int, user: User, db: AsyncSession) -> Check:
     check = await db.get(Check, check_id, options=[selectinload(Check.results)], populate_existing=True)
-    if check is None or check.user_id != user.id:
+    if check is None or (check.user_id != user.id and not user.is_staff):
         raise HTTPException(404, "Проверка не найдена")
     return check
 

@@ -1,0 +1,8 @@
+{% if log %}
+<ul class="log" style="padding-left:18px; margin-top:12px">
+  {% for a in log %}
+  <li class="k-{{ a.kind }}">{{ a.text }}
+    <div class="muted">{{ a.created_at.strftime("%d.%m.%Y %H:%M") }}{% if a.author %} · {{ a.author.email or 'Telegram' }}{% endif %}{% if a.deal_id and not deal %} · <a href="/crm/deals/{{ a.deal_id }}">сделка №{{ a.deal_id }}</a>{% endif %}</div></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">Записей пока нет.</p>{% endif %}

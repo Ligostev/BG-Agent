@@ -87,7 +87,8 @@
     {% for r in requests %}
     <tr><td style="width:auto">№ {{ r.purchase_number }}<div class="muted">{{ (r.subject or '')[:120] }}</div></td>
       <td>{{ r.product }}{% if r.amount %}<div class="muted">{{ money(r.amount) }}</div>{% endif %}</td>
-      <td class="muted">{{ r.created_at.strftime("%d.%m.%Y") }}</td></tr>
+      <td><span class="badge">{{ r.stage_title }}</span>
+        <div class="muted">{{ r.created_at.strftime("%d.%m.%Y") }}</div></td></tr>
     {% endfor %}
   </table>
   {% else %}<p class="muted">Заявок пока нет.</p>{% endif %}

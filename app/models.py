@@ -22,9 +22,18 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     # Пользователь бота заводится по telegram_id; привязку к кабинету сделаем кодом из кабинета.
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
+    # client — клиент брокера (сам заходит в кабинет); manager и admin — сотрудники, им открыт раздел CRM.
+    role: Mapped[str] = mapped_column(String(16), default="client")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     checks: Mapped[list["Check"]] = relationship(back_populates="user")
+
+    @property
+    def is_staff(self) -> bool:
+        return self.role in STAFF_ROLES
+
+
+STAFF_ROLES = ("manager", "admin")
 
 
 class CheckStatus:
@@ -112,16 +121,125 @@ class TenderNotice(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class GuaranteeRequest(Base):
-    """Клиент нажал «Нужна гарантия» по закупке: заявка брокеру."""
+class Client(Base):
+    """Компания или ИП, с которой работает брокер. Может быть привязана к учётке клиента в кабинете."""
 
-    __tablename__ = "guarantee_requests"
+    __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    purchase_number: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str | None] = mapped_column(String(500))
+    inn: Mapped[str | None] = mapped_column(String(12), unique=True)
+    ogrn: Mapped[str | None] = mapped_column(String(15))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), unique=True)
+    source: Mapped[str | None] = mapped_column(String(200))     # откуда пришёл клиент
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User | None] = relationship()
+    contacts: Mapped[list["Contact"]] = relationship(
+        back_populates="client", order_by="Contact.id", cascade="all, delete-orphan")
+    deals: Mapped[list["Deal"]] = relationship(back_populates="client", order_by="Deal.id.desc()")
+
+
+class Contact(Base):
+    """Контактное лицо клиента."""
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    position: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(255))
+    telegram: Mapped[str | None] = mapped_column(String(100))
+
+    client: Mapped[Client] = relationship(back_populates="contacts")
+
+
+class DealStage:
+    """Этапы сделки по гарантии (воронка)."""
+
+    NEW = "new"
+    DOCS = "docs"
+    BANKS = "banks"
+    APPROVED = "approved"
+    ISSUED = "issued"
+    LOST = "lost"
+
+    TITLES = {NEW: "Новая", DOCS: "Сбор документов", BANKS: "В банках", APPROVED: "Одобрена",
+              ISSUED: "Выдана", LOST: "Отказ"}
+    OPEN = (NEW, DOCS, BANKS, APPROVED)
+    CLOSED = (ISSUED, LOST)
+
+
+class BankStatus:
+    """Статус заявки в отдельном банке."""
+
+    TITLES = {"preparing": "Готовим", "sent": "Отправлена", "review": "На рассмотрении",
+              "approved": "Одобрена", "rejected": "Отказ", "issued": "Выдана"}
+
+
+class Deal(Base):
+    """Сделка: одна гарантия для клиента. Создаётся кнопкой «Нужна гарантия» или сотрудником в CRM."""
+
+    __tablename__ = "deals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    # Кто завёл: клиент из кабинета или сотрудник.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    purchase_number: Mapped[str | None] = mapped_column(String(32))
     subject: Mapped[str | None] = mapped_column(Text)
     product: Mapped[str] = mapped_column(String(200))
-    amount: Mapped[float | None] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(String(16), default="new")
+    amount: Mapped[float | None] = mapped_column(Float)          # сумма гарантии
+    commission: Mapped[float | None] = mapped_column(Float)      # комиссия брокера, ₽
+    stage: Mapped[str] = mapped_column(String(16), default=DealStage.NEW, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    client: Mapped[Client] = relationship(back_populates="deals")
+    banks: Mapped[list["DealBank"]] = relationship(
+        back_populates="deal", order_by="DealBank.id", cascade="all, delete-orphan")
+
+    @property
+    def stage_title(self) -> str:
+        return DealStage.TITLES.get(self.stage, self.stage)
+
+
+class DealBank(Base):
+    """Заявка по сделке в конкретный банк и его предложение."""
+
+    __tablename__ = "deal_banks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"), index=True)
+    bank: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="preparing")
+    rate: Mapped[float | None] = mapped_column(Float)    # ставка банка, % годовых
+    fee: Mapped[float | None] = mapped_column(Float)     # стоимость гарантии для клиента, ₽
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    deal: Mapped[Deal] = relationship(back_populates="banks")
+
+    @property
+    def status_title(self) -> str:
+        return BankStatus.TITLES.get(self.status, self.status)
+
+
+class Activity(Base):
+    """Журнал по клиенту: заметки, звонки и автоматические записи (смена этапа, проверка)."""
+
+    __tablename__ = "activities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(16), default="note")   # note | call | system
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped[User | None] = relationship()

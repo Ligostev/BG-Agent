@@ -52,6 +52,10 @@ CAPTCHA_TIMEOUT=180
 ENV
   chown bg "$HOME_DIR/env" && chmod 600 "$HOME_DIR/env"
 fi
+# Администраторы CRM: sudo ADMIN_EMAILS=boss@example.ru bash install-lite.sh <домен>
+if [ -n "${ADMIN_EMAILS:-}" ]; then
+  sed -i '/^ADMIN_EMAILS=/d' "$HOME_DIR/env" && echo "ADMIN_EMAILS=$ADMIN_EMAILS" >> "$HOME_DIR/env"
+fi
 
 echo "== Служба"
 cat > /etc/systemd/system/bg-agent.service <<UNIT
