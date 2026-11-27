@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, Header, HTTPException, Request
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,12 @@ async def session_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
 async def web_user(user: User | None = Depends(session_user)) -> User:
     if user is None:
         raise LoginRequired
+    return user
+
+
+async def staff_user(user: User = Depends(web_user)) -> User:
+    if not user.is_staff:
+        raise HTTPException(403, "Раздел только для сотрудников")
     return user
 
 
@@ -68,9 +74,22 @@ async def create_check(request: Request, db: AsyncSession, user: User, query: st
 
 async def own_check(check_id: int, user: User, db: AsyncSession) -> Check:
     check = await db.get(Check, check_id, options=[selectinload(Check.results)], populate_existing=True)
-    if check is None or check.user_id != user.id:
+    if check is None or not await can_see_check(db, user, check):
         raise HTTPException(404, "Проверка не найдена")
     return check
+
+
+async def can_see_check(db: AsyncSession, user: User, check: Check) -> bool:
+    """Свою проверку видит каждый; администратор любую; менеджер — по ИНН своих и общих клиентов."""
+    if check.user_id == user.id or user.role == "admin":
+        return True
+    if user.role != "manager":
+        return False
+    from .models import Client
+    inns = {x for x in (check.inn, check.query) if x}
+    row = (await db.execute(select(Client.id).where(
+        Client.inn.in_(inns), or_(Client.manager_id == user.id, Client.manager_id.is_(None))))).first()
+    return row is not None
 
 
 async def answer_captcha(request: Request, db: AsyncSession, check: Check, answer: str) -> bool:

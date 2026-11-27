@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Задачи{% endblock %}
+{% block wrapclass %} wide{% endblock %}
+{% block content %}
+<div class="card">
+  {% if user.role == 'admin' %}<div class="tabs">
+    <a href="/crm/tasks" class="{{ 'on' if who != 'all' }}">Мои и общие</a>
+    <a href="/crm/tasks?who=all" class="{{ 'on' if who == 'all' }}">Все сотрудники</a>
+  </div>{% endif %}
+  {% for name, items in groups.items() %}{% if items or name != 'Без срока' %}
+  <div class="stage {{ 'r-error' if name == 'Просрочено' and items }}">{{ name }} <span class="muted">· {{ items | length }}</span></div>
+  {% if items %}
+  <table>
+    {% for t in items %}
+    <tr>
+      <td style="width:auto">{{ t.title }}
+        <div class="muted">
+          {% if t.client %}<a href="/crm/clients/{{ t.client.id }}">{{ client_title(t.client) }}</a>{% endif %}
+          {% if t.deal %} · <a href="/crm/deals/{{ t.deal.id }}">сделка №{{ t.deal.id }}</a>{% endif %}
+          {% if who == 'all' or not t.assignee %} · {{ t.assignee.email if t.assignee else 'любой сотрудник' }}{% endif %}
+        </div></td>
+      <td style="width:16%" class="muted">{{ t.due_at | msk if t.due_at else '' }}</td>
+      <td style="width:1%; white-space:nowrap">
+        {% if t.due_at %}<form method="post" action="/crm/tasks/{{ t.id }}/postpone" style="display:inline">
+          <input type="hidden" name="days" value="1"><input type="hidden" name="back" value="/crm/tasks?who={{ who }}">
+          <button class="link" type="submit">+1 день</button></form>&nbsp;{% endif %}
+        <form method="post" action="/crm/tasks/{{ t.id }}/done" style="display:inline">
+          <input type="hidden" name="back" value="/crm/tasks?who={{ who }}"><button type="submit">Готово</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Нет.</p>{% endif %}
+  {% endif %}{% endfor %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Новая задача</h3>
+  <form method="post" action="/crm/tasks" class="grid">
+    <input type="hidden" name="back" value="/crm/tasks?who={{ who }}">
+    <div class="row">
+      <input type="text" name="title" placeholder="Что сделать" required style="flex:3">
+      <input type="datetime-local" name="due" class="sm" style="flex:1">
+    </div>
+    <div class="row" style="margin-top:8px; align-items:center">
+      <select name="client_id" style="flex:2"><option value="">Без клиента</option>
+        {% for c in clients %}<option value="{{ c.id }}">{{ client_title(c) }}{% if c.inn %} ({{ c.inn }}){% endif %}</option>{% endfor %}
+      </select>
+      <select name="assignee_id" style="flex:1"><option value="me">Мне</option><option value="">Ответственному / любому</option>
+        {% for s in staff %}<option value="{{ s.id }}">{{ s.email }}</option>{% endfor %}</select>
+      <label style="flex:0; white-space:nowrap"><input type="checkbox" name="remind" value="1" checked> напомнить в Telegram</label>
+      <button type="submit" style="flex:0">Добавить</button>
+    </div>
+  </form>
+</div>
+
+<div class="card" id="telegram">
+  <h3 style="margin-top:0">Напоминания в Telegram</h3>
+  {% if not bot_ready %}<p class="muted">На сервере не задан BOT_TOKEN, напоминания пока не отправляются.</p>{% endif %}
+  {% if user.telegram_id %}<p>Telegram подключён, напоминания придут туда в срок задачи.</p>{% endif %}
+  {% if user.telegram_code %}
+    {% if bot_username %}
+    <p>Откройте ссылку и нажмите «Старт»: <a href="https://t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}" target="_blank" rel="noopener">t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}</a></p>
+    {% else %}<p>Отправьте боту сообщение: <code>/start link_{{ user.telegram_code }}</code></p>{% endif %}
+  {% else %}
+  <form method="post" action="/crm/telegram/link"><button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
+  {% endif %}
+</div>
+
+{% if done %}
+<div class="card">
+  <h3 style="margin-top:0">Недавно выполненные</h3>
+  <table>{% for t in done %}
+    <tr><td style="width:auto" class="muted"><s>{{ t.title }}</s>{% if t.client %} · {{ client_title(t.client) }}{% endif %}</td>
+      <td class="muted" style="width:16%">{{ t.done_at | msk }}</td>
+      <td style="width:1%"><form method="post" action="/crm/tasks/{{ t.id }}/done">
+        <input type="hidden" name="back" value="/crm/tasks?who={{ who }}"><button class="link" type="submit">вернуть</button></form></td></tr>
+  {% endfor %}</table>
+</div>
+{% endif %}
+{% endblock %}

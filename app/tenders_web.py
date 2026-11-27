@@ -16,7 +16,8 @@ from tenders.eis import LAWS
 from tenders.regions import REGIONS
 
 from .deps import get_db, web_user
-from .models import GuaranteeRequest, TenderNotice, TenderProfile, User
+from .crm import client_for_user, log
+from .models import Client, Deal, TenderNotice, TenderProfile, User
 from .web import go, render
 
 router = APIRouter(include_in_schema=False)
@@ -74,8 +75,8 @@ async def page(request: Request, db: AsyncSession, user: User, status_code: int 
     matches = await find_matches(db, profile) if (profile.okpd2 or profile.keywords or profile.embedding) else []
     semantic = ("off" if not settings.embed_model else
                 "pending" if (row.description or "") != (row.embedding_text or "") else "ready")
-    requests = (await db.execute(select(GuaranteeRequest).where(GuaranteeRequest.user_id == user.id)
-                                 .order_by(GuaranteeRequest.id.desc()).limit(20))).scalars().all()
+    requests = (await db.execute(select(Deal).join(Client).where(Client.user_id == user.id)
+                                 .order_by(Deal.id.desc()).limit(20))).scalars().all()
     eis_ready = bool(request.app.state.settings.eis_token)
     return render(request, "tenders.html", status_code, user=user, profile=row, matches=matches,
                   requests=requests, regions=REGIONS, money=money, eis_url=eis_url,
@@ -135,13 +136,17 @@ async def ask_guarantee(number: str, request: Request, user: User = Depends(web_
     if row is None:
         raise HTTPException(404, "Закупка не найдена")
     n = Notice.from_dict(row.data)
-    exists = (await db.execute(select(GuaranteeRequest).where(
-        GuaranteeRequest.user_id == user.id, GuaranteeRequest.purchase_number == number))).first()
+    client = await client_for_user(db, user)
+    exists = (await db.execute(select(Deal).where(
+        Deal.client_id == client.id, Deal.purchase_number == number))).first()
     if not exists:
         products = guarantee_products(n) or [("БГ на исполнение контракта", None)]
         for product, amount in products:
             if product.startswith("БГ"):
-                db.add(GuaranteeRequest(user_id=user.id, purchase_number=number, subject=n.subject[:1000],
-                                        product=product, amount=amount))
+                deal = Deal(client_id=client.id, user_id=user.id, purchase_number=number,
+                            subject=n.subject[:1000], product=product, amount=amount)
+                db.add(deal)
+                await db.flush()
+                log(db, client.id, user, f"Заявка из кабинета: {product} по закупке № {number}", deal_id=deal.id)
         await db.commit()
     return go("/tenders#requests")

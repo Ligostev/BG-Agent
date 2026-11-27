@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ client_title(client) }}{% endblock %}
+{% block wrapclass %} wide{% endblock %}
+{% block content %}
+<p><a href="/crm/clients">← Клиенты</a></p>
+<div class="card">
+  <h2 style="margin-top:0">{{ client_title(client) }}</h2>
+  <p class="muted">{% if client.inn %}ИНН {{ client.inn }}{% endif %}{% if client.ogrn %} · ОГРН {{ client.ogrn }}{% endif %}
+    {% if client.user %} · в кабинете: {{ client.user.email or 'через Telegram' }}{% endif %}
+    · в CRM с {{ client.created_at | msk("%d.%m.%Y") }}</p>
+  <form method="post" action="/crm/clients/{{ client.id }}" class="grid">
+    <div class="row">
+      <label>Название<br><input type="text" class="sm" name="title" value="{{ client.title or '' }}"></label>
+      <label>ИНН<br><input type="text" class="sm" name="inn" inputmode="numeric" value="{{ client.inn or '' }}"></label>
+      <label>Откуда пришёл<br><input type="text" class="sm" name="source" value="{{ client.source or '' }}"></label>
+      <label>Ответственный<br><select name="manager_id"><option value="">не назначен</option>
+        {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if s.id == client.manager_id }}>{{ s.email }}</option>{% endfor %}
+      </select></label>
+    </div>
+    <label>Заметки о клиенте<textarea name="notes" rows="2">{{ client.notes or '' }}</textarea></label>
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+
+<div class="card" id="tasks">
+  <h3 style="margin-top:0">Задачи</h3>
+  {% set back = '/crm/clients/%d#tasks' % client.id %}{% set client_id = client.id %}
+  {% include "_crm_tasks.html" %}
+</div>
+
+<div class="card" id="deals">
+  <h3 style="margin-top:0">Сделки</h3>
+  {% if client.deals %}
+  <table>
+    {% for d in client.deals %}
+    <tr><td style="width:auto"><a href="/crm/deals/{{ d.id }}">№{{ d.id }} · {{ d.product }}</a>
+        {% if d.purchase_number %}<div class="muted">закупка № {{ d.purchase_number }}</div>{% endif %}</td>
+      <td>{{ money(d.amount) }}</td><td><span class="badge">{{ d.stage_title }}</span></td>
+      <td class="muted">{{ d.created_at | msk("%d.%m.%Y") }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Сделок пока нет.</p>{% endif %}
+  <form method="post" action="/crm/deals" class="row" style="margin-top:10px">
+    <input type="hidden" name="client_id" value="{{ client.id }}">
+    <input type="text" name="product" list="products" placeholder="Продукт" required>
+    <input type="text" name="amount" inputmode="numeric" placeholder="Сумма, ₽">
+    <input type="text" name="purchase_number" placeholder="№ закупки">
+    <button type="submit">Новая сделка</button>
+  </form>
+  <datalist id="products">{% for p in products %}<option value="{{ p }}">{% endfor %}</datalist>
+</div>
+
+<div class="card" id="contacts">
+  <h3 style="margin-top:0">Контакты</h3>
+  {% if client.contacts %}
+  <table>
+    {% for p in client.contacts %}
+    <tr><td style="width:auto"><b>{{ p.name }}</b>{% if p.position %}<div class="muted">{{ p.position }}</div>{% endif %}</td>
+      <td>{{ p.phone or '' }}</td><td>{{ p.email or '' }}</td><td>{{ p.telegram or '' }}</td>
+      <td><form method="post" action="/crm/clients/{{ client.id }}/contacts/{{ p.id }}/delete">
+        <button class="link" type="submit">удалить</button></form></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <form method="post" action="/crm/clients/{{ client.id }}/contacts" class="row" style="margin-top:10px">
+    <input type="text" name="name" placeholder="Имя" required>
+    <input type="text" name="position" placeholder="Должность">
+    <input type="text" name="phone" placeholder="Телефон">
+    <input type="text" name="email" placeholder="Email">
+    <input type="text" name="telegram" placeholder="Telegram">
+    <button type="submit">Добавить</button>
+  </form>
+</div>
+
+<div class="card" id="checks">
+  <h3 style="margin-top:0">Проверки</h3>
+  {% if checks %}
+  <table>
+    {% for c in checks %}
+    <tr><td style="width:auto"><a href="/checks/{{ c.id }}">{{ c.title or c.query }}</a></td>
+      <td><span class="badge s-{{ c.status }}">{{ c.status | status }}</span></td>
+      <td class="muted">{{ c.created_at | msk("%d.%m.%Y %H:%M") }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">{{ 'Проверок по этому ИНН ещё не было.' if client.inn else 'Укажите ИНН, чтобы проверить клиента.' }}</p>{% endif %}
+  {% if client.inn %}
+  <form method="post" action="/crm/clients/{{ client.id }}/check" style="margin-top:10px">
+    <button type="submit">Проверить сейчас</button></form>
+  {% endif %}
+</div>
+
+<div class="card" id="log">
+  <h3 style="margin-top:0">Журнал</h3>
+  <form method="post" action="/crm/clients/{{ client.id }}/notes">
+    <textarea name="text" rows="2" placeholder="Заметка или итог звонка" required></textarea>
+    <div class="row" style="margin-top:6px; align-items:center">
+      <select name="kind" style="flex:0"><option value="note">Заметка</option><option value="call">Звонок</option></select>
+      <button type="submit" style="flex:0">Добавить</button></div>
+  </form>
+  {% include "_crm_log.html" %}
+</div>
+{% endblock %}

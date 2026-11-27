@@ -1,8 +1,8 @@
 """Пользователи, проверки и ответы источников."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -22,9 +22,20 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     # Пользователь бота заводится по telegram_id; привязку к кабинету сделаем кодом из кабинета.
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
+    # client — клиент брокера (сам заходит в кабинет); manager и admin — сотрудники, им открыт раздел CRM.
+    role: Mapped[str] = mapped_column(String(16), default="client")
+    # Одноразовый код для привязки Telegram к учётке: t.me/<бот>?start=link_<код>.
+    telegram_code: Mapped[str | None] = mapped_column(String(32), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     checks: Mapped[list["Check"]] = relationship(back_populates="user")
+
+    @property
+    def is_staff(self) -> bool:
+        return self.role in STAFF_ROLES
+
+
+STAFF_ROLES = ("manager", "admin")
 
 
 class CheckStatus:
@@ -112,16 +123,155 @@ class TenderNotice(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class GuaranteeRequest(Base):
-    """Клиент нажал «Нужна гарантия» по закупке: заявка брокеру."""
+class Client(Base):
+    """Компания или ИП, с которой работает брокер. Может быть привязана к учётке клиента в кабинете."""
 
-    __tablename__ = "guarantee_requests"
+    __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    purchase_number: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str | None] = mapped_column(String(500))
+    inn: Mapped[str | None] = mapped_column(String(12), unique=True)
+    ogrn: Mapped[str | None] = mapped_column(String(15))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), unique=True)
+    source: Mapped[str | None] = mapped_column(String(200))     # откуда пришёл клиент
+    # Ответственный сотрудник: ему уходят задачи и напоминания по клиенту.
+    manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User | None] = relationship(foreign_keys=[user_id])
+    manager: Mapped[User | None] = relationship(foreign_keys=[manager_id])
+    contacts: Mapped[list["Contact"]] = relationship(
+        back_populates="client", order_by="Contact.id", cascade="all, delete-orphan")
+    deals: Mapped[list["Deal"]] = relationship(back_populates="client", order_by="Deal.id.desc()")
+
+
+class Contact(Base):
+    """Контактное лицо клиента."""
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    position: Mapped[str | None] = mapped_column(String(200))
+    phone: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str | None] = mapped_column(String(255))
+    telegram: Mapped[str | None] = mapped_column(String(100))
+
+    client: Mapped[Client] = relationship(back_populates="contacts")
+
+
+class DealStage:
+    """Этапы сделки по гарантии (воронка)."""
+
+    NEW = "new"
+    DOCS = "docs"
+    BANKS = "banks"
+    APPROVED = "approved"
+    ISSUED = "issued"
+    LOST = "lost"
+
+    TITLES = {NEW: "Новая", DOCS: "Сбор документов", BANKS: "В банках", APPROVED: "Одобрена",
+              ISSUED: "Выдана", LOST: "Отказ"}
+    OPEN = (NEW, DOCS, BANKS, APPROVED)
+    CLOSED = (ISSUED, LOST)
+
+
+class BankStatus:
+    """Статус заявки в отдельном банке."""
+
+    TITLES = {"preparing": "Готовим", "sent": "Отправлена", "review": "На рассмотрении",
+              "approved": "Одобрена", "rejected": "Отказ", "issued": "Выдана"}
+
+
+class Deal(Base):
+    """Сделка: одна гарантия для клиента. Создаётся кнопкой «Нужна гарантия» или сотрудником в CRM."""
+
+    __tablename__ = "deals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    # Кто завёл: клиент из кабинета или сотрудник.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    purchase_number: Mapped[str | None] = mapped_column(String(32))
     subject: Mapped[str | None] = mapped_column(Text)
     product: Mapped[str] = mapped_column(String(200))
-    amount: Mapped[float | None] = mapped_column(Float)
-    status: Mapped[str] = mapped_column(String(16), default="new")
+    amount: Mapped[float | None] = mapped_column(Float)          # сумма гарантии
+    commission: Mapped[float | None] = mapped_column(Float)      # комиссия брокера, ₽
+    # Срок действия выданной гарантии: за 30 дней до него появится задача предложить новую.
+    expires_at: Mapped[date | None] = mapped_column(Date)
+    stage: Mapped[str] = mapped_column(String(16), default=DealStage.NEW, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    client: Mapped[Client] = relationship(back_populates="deals")
+    banks: Mapped[list["DealBank"]] = relationship(
+        back_populates="deal", order_by="DealBank.id", cascade="all, delete-orphan")
+
+    @property
+    def stage_title(self) -> str:
+        return DealStage.TITLES.get(self.stage, self.stage)
+
+
+class DealBank(Base):
+    """Заявка по сделке в конкретный банк и его предложение."""
+
+    __tablename__ = "deal_banks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"), index=True)
+    bank: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="preparing")
+    rate: Mapped[float | None] = mapped_column(Float)    # ставка банка, % годовых
+    fee: Mapped[float | None] = mapped_column(Float)     # стоимость гарантии для клиента, ₽
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    deal: Mapped[Deal] = relationship(back_populates="banks")
+
+    @property
+    def status_title(self) -> str:
+        return BankStatus.TITLES.get(self.status, self.status)
+
+
+class Activity(Base):
+    """Журнал по клиенту: заметки, звонки и автоматические записи (смена этапа, проверка)."""
+
+    __tablename__ = "activities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(16), default="note")   # note | call | system
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    author: Mapped[User | None] = relationship()
+
+
+class Task(Base):
+    """Задача сотрудника: перезвонить, запросить документы, предложить продление гарантии."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(500))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), index=True)
+    # Кому: пусто — любому сотруднику (видна всем, напоминание уходит всем с Telegram).
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    remind: Mapped[bool] = mapped_column(Boolean, default=True)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # Автоматическая задача (например, «гарантия истекает»): ключ, чтобы не завести её дважды.
+    auto_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    client: Mapped[Client | None] = relationship()
+    deal: Mapped[Deal | None] = relationship()
+    assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])

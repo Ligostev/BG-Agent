@@ -17,7 +17,7 @@
     a { color:var(--accent); text-decoration:none; }
     .brand { font-weight:600; color:var(--text); }
     .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:16px 0; }
-    input[type=text], input[type=email], input[type=password] {
+    input[type=text], input[type=email], input[type=password], input[type=datetime-local], input[type=date] {
       width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
     button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff;
              font:inherit; cursor:pointer; }
@@ -32,20 +32,32 @@
     .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:13px; background:var(--bg); }
     .s-done, .r-found { color:var(--ok); } .s-error, .r-error { color:var(--bad); }
     .s-captcha, .r-warn { color:var(--warn); }
+    .wrap.wide { max-width:1200px; }
+    input[type=text].sm, select, textarea { padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+      font:inherit; background:#fff; }
+    textarea { width:100%; }
+    .tabs a { display:inline-block; margin:0 6px 6px 0; padding:4px 10px; border-radius:999px;
+              border:1px solid var(--line); background:var(--card); color:var(--text); }
+    .tabs a.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .stage { margin:18px 0 6px; font-weight:600; }
+    .log li { margin-bottom:8px; } .log .muted { font-size:13px; }
+    .bar { height:8px; background:var(--accent); border-radius:4px; min-width:2px; }
+    .num { text-align:right; white-space:nowrap; }
+    .k-call::before { content:"☎ "; }
     form.narrow { max-width:380px; margin:40px auto; }
     form.narrow label { display:block; margin:12px 0 4px; }
     form.narrow button { margin-top:16px; width:100%; }
   </style>
 </head>
 <body>
-  <header><div class="wrap">
+  <header><div class="wrap{{ self.wrapclass() }}">
     <nav><a class="brand" href="/">Проверка контрагентов</a>
-      {% if user %}&nbsp;·&nbsp;<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
+      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · <a href="/crm/reports">Аналитика</a> · {% if user.role == "admin" %}<a href="/crm/staff">Сотрудники</a> · {% endif %}{% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
     {% if user %}
       <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
         <button class="link" type="submit">Выйти</button></form>
     {% endif %}
   </div></header>
-  <main class="wrap">{% block content %}{% endblock %}</main>
+  <main class="wrap{% block wrapclass %}{% endblock %}">{% block content %}{% endblock %}</main>
 </body>
 </html>

@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .checks import format_status
+from .crm_tasks import msk
 from .deps import answer_captcha, create_check, get_db, normalize_query, own_check, session_user, web_user
 from .models import Check, CheckStatus, User
 from .security import hash_password, verify_password
@@ -19,6 +20,7 @@ from .security import hash_password, verify_password
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["status"] = format_status
 templates.env.globals["CheckStatus"] = CheckStatus
+templates.env.filters["msk"] = msk
 
 router = APIRouter(include_in_schema=False)
 
@@ -32,9 +34,18 @@ def go(url: str) -> RedirectResponse:
     return RedirectResponse(url, status_code=303)
 
 
+def apply_admin_role(request: Request, user: User) -> None:
+    if user.email and user.email in request.app.state.settings.admin_emails:
+        user.role = "admin"
+
+
+def home(user: User) -> str:
+    return "/crm" if user.is_staff else "/checks"
+
+
 @router.get("/")
 async def index(user: User | None = Depends(session_user)):
-    return go("/checks" if user else "/login")
+    return go(home(user) if user else "/login")
 
 
 @router.get("/register")
@@ -50,6 +61,7 @@ async def register(request: Request, email: str = Form(), password: str = Form()
         return render(request, "register.html", 400, email=email,
                       error="Укажите email и пароль не короче 8 символов")
     user = User(email=email, password_hash=hash_password(password))
+    apply_admin_role(request, user)
     db.add(user)
     try:
         await db.commit()
@@ -57,7 +69,7 @@ async def register(request: Request, email: str = Form(), password: str = Form()
         return render(request, "register.html", 400, email=email,
                       error="Пользователь с таким email уже есть")
     request.session["uid"] = user.id
-    return go("/checks")
+    return go(home(user))
 
 
 @router.get("/login")
@@ -72,8 +84,11 @@ async def login(request: Request, email: str = Form(), password: str = Form(),
     user = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
         return render(request, "login.html", 400, email=email, error="Неверный email или пароль")
+    if user.role != "admin" and user.email in request.app.state.settings.admin_emails:
+        apply_admin_role(request, user)
+        await db.commit()
     request.session["uid"] = user.id
-    return go("/checks")
+    return go(home(user))
 
 
 @router.post("/logout")

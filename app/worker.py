@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from arq import cron
 from arq.connections import RedisSettings
 
 from .captcha import RedisCaptchaBroker
@@ -30,8 +31,20 @@ async def run_check(ctx: dict, check_id: int) -> None:
     await ctx["runner"].run(check_id)
 
 
+async def crm_reminders(ctx: dict) -> dict:
+    """Задачи «гарантия истекает» и напоминания сотрудникам в Telegram."""
+    from .crm_tasks import send_reminders, telegram_sender
+    send, close = telegram_sender(settings.bot_token) if settings.bot_token else (None, None)
+    try:
+        return await send_reminders(make_sessionmaker(ctx["engine"]), send, settings.public_url)
+    finally:
+        if close:
+            await close()
+
+
 class WorkerSettings:
     functions = [run_check]
+    cron_jobs = [cron(crm_reminders, minute=set(range(0, 60, 5)), run_at_startup=True)]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url or "redis://localhost:6379")
