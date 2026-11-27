@@ -24,6 +24,7 @@ from .sources import Source
 
 
 def default_sources() -> list[Source]:
+    from .sources.accblock import AccountBlocksSource
     from .sources.bankrot import BankruptcySource
     from .sources.fns import FnsSource
     from .sources.fns_opendata import DisqualifiedSource, TaxOffenceSource
@@ -34,8 +35,8 @@ def default_sources() -> list[Source]:
         sources.append(DaDataSource())  # основной источник карточки, идёт первым
     if os.environ.get("PBNALOG_MODE", "always").strip().lower() != "off":
         sources.append(FnsSource())
-    return [*sources, BankruptcySource(), Koap1928Source(), DisqualifiedSource(),
-            TaxOffenceSource()]
+    return [*sources, AccountBlocksSource(), BankruptcySource(), Koap1928Source(),
+            DisqualifiedSource(), TaxOffenceSource()]
 
 
 def create_app(settings: Settings | None = None, sources: list[Source] | None = None,
