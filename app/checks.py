@@ -52,6 +52,8 @@ class CheckRunner:
                 log.exception("источник %s, проверка %s", source.name, check_id)
                 row.status, row.error = "error", f"{type(e).__name__}: {e}"
             else:
+                if data.skipped:
+                    continue
                 ctx.previous[source.name] = data
                 row.status = "found" if data.found else "not_found"
                 row.summary = [list(p) for p in data.summary]

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -27,7 +28,13 @@ def default_sources() -> list[Source]:
     from .sources.fns import FnsSource
     from .sources.fns_opendata import DisqualifiedSource, TaxOffenceSource
     from .sources.koap1928 import Koap1928Source
-    return [FnsSource(), BankruptcySource(), Koap1928Source(), DisqualifiedSource(),
+    sources: list[Source] = []
+    if os.environ.get("DADATA_API_KEY"):
+        from .sources.dadata import DaDataSource
+        sources.append(DaDataSource())  # основной источник карточки, идёт первым
+    if os.environ.get("PBNALOG_MODE", "always").strip().lower() != "off":
+        sources.append(FnsSource())
+    return [*sources, BankruptcySource(), Koap1928Source(), DisqualifiedSource(),
             TaxOffenceSource()]
 
 
