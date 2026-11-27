@@ -23,8 +23,9 @@ from .sources import Source
 
 
 def default_sources() -> list[Source]:
+    from .sources.bankrot import BankruptcySource
     from .sources.fns import FnsSource
-    return [FnsSource()]
+    return [FnsSource(), BankruptcySource()]
 
 
 def create_app(settings: Settings | None = None, sources: list[Source] | None = None,

@@ -24,6 +24,9 @@
       {% if r.data %}<a class="muted" style="font-size:13px;font-weight:400"
          href="/api/checks/{{ check.id }}/data/{{ r.source }}" target="_blank">JSON</a>{% endif %}</h3>
     {% if r.status == "found" %}
+      {% if r.source == "bankrot" and r.data %}
+        <p class="{{ 'r-error' if r.data.flagged else 'r-found' }}"><b>{{ 'Есть признаки банкротства' if r.data.flagged else 'Признаков банкротства не найдено' }}</b></p>
+      {% endif %}
       <table>{% for label, value in r.summary %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
     {% elif r.status == "not_found" %}
       <p class="muted">Сведений не найдено.</p>
