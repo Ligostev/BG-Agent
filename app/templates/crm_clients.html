@@ -14,12 +14,20 @@
     <button type="submit">Добавить</button>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
   </form>
+  <form method="post" action="/crm/import/clients" enctype="multipart/form-data" style="margin-top:14px">
+    <span class="muted">Или загрузите список из Excel/CSV: колонки «ИНН», «Наименование», по желанию «Источник»,
+      «Контакт», «Телефон», «Email», «Комментарий». Клиенты, которые уже есть в CRM, пропускаются.</span>
+    <div class="row" style="margin-top:6px"><input type="file" name="file" accept=".xlsx,.csv" required>
+      <button type="submit">Загрузить</button></div>
+  </form>
+  {% if notice %}<p>{{ notice }}</p>{% endif %}
 </div>
 <div class="card">
   <form method="get" action="/crm/clients" class="row">
     <input type="text" name="q" value="{{ q }}" placeholder="Название, ИНН или email">
     <button type="submit">Найти</button>
   </form>
+  <p class="muted" style="margin:8px 0 0"><a href="/crm/clients.xlsx">Скачать всех в Excel</a></p>
   {% if clients %}
   <table style="margin-top:10px">
     {% for c in clients %}

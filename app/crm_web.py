@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -226,7 +226,7 @@ async def deal_note(deal_id: int, text: str = Form(), kind: str = Form("note"),
 # --- Клиенты --------------------------------------------------------------------------------------
 
 @router.get("/clients")
-async def clients_page(request: Request, q: str = "", error: str = "", user: User = Depends(staff_user),
+async def clients_page(request: Request, q: str = "", error: str = "", notice: str = "", user: User = Depends(staff_user),
                        db: AsyncSession = Depends(get_db)):
     query = (select(Client).where(visible_clients(user))
              .options(selectinload(Client.user), selectinload(Client.manager), selectinload(Client.deals)))
@@ -235,7 +235,7 @@ async def clients_page(request: Request, q: str = "", error: str = "", user: Use
         query = query.outerjoin(User, Client.user_id == User.id).where(
             or_(Client.title.ilike(like), Client.inn.like(like), User.email.ilike(like)))
     clients = list((await db.execute(query.order_by(Client.id.desc()).limit(300))).scalars())
-    return render(request, "crm_clients.html", **ctx(user=user, clients=clients, q=q, error=error))
+    return render(request, "crm_clients.html", **ctx(user=user, clients=clients, q=q, error=error, notice=notice))
 
 
 @router.post("/clients")
@@ -473,3 +473,104 @@ async def staff_set_role(request: Request, email: str = Form(), role: str = Form
                          .values(assignee_id=None))
     await db.commit()
     return go("/crm/staff")
+
+
+# --- Аналитика и Excel -----------------------------------------------------------------------------
+
+PERIODS = {"month": "Этот месяц", "prev": "Прошлый месяц", "quarter": "3 месяца", "year": "12 месяцев"}
+
+
+def period_bounds(period: str, today) -> tuple:
+    from .crm_reports import month_start
+    if period == "prev":
+        start = month_start(today, 1)
+        return start, month_start(today) - timedelta(days=1)
+    if period == "quarter":
+        return month_start(today, 2), today
+    if period == "year":
+        return month_start(today, 11), today
+    return month_start(today), today
+
+
+async def visible_deals(db: AsyncSession, user: User) -> list[Deal]:
+    q = (select(Deal).join(Client).where(visible_clients(user))
+         .options(selectinload(Deal.banks), selectinload(Deal.client).selectinload(Client.manager),
+                  selectinload(Deal.client).selectinload(Client.user)).order_by(Deal.id))
+    return list((await db.execute(q)).scalars())
+
+
+@router.get("/reports")
+async def reports_page(request: Request, period: str = "month", user: User = Depends(staff_user),
+                       db: AsyncSession = Depends(get_db)):
+    from .crm_reports import build
+    period = period if period in PERIODS else "month"
+    today = utcnow().astimezone(MSK).date()
+    start, end = period_bounds(period, today)
+    report = build(await visible_deals(db, user), start, end, today)
+    return render(request, "crm_reports.html", **ctx(user=user, r=report, period=period, periods=PERIODS,
+                                                      start=start, end=end))
+
+
+def xlsx(data: bytes, name: str) -> Response:
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/deals.xlsx")
+async def deals_export(user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    from .crm_excel import export_deals
+    return xlsx(export_deals(await visible_deals(db, user), client_title), "deals.xlsx")
+
+
+@router.get("/clients.xlsx")
+async def clients_export(user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    from .crm_excel import export_clients
+    q = (select(Client).where(visible_clients(user)).order_by(Client.id)
+         .options(selectinload(Client.contacts), selectinload(Client.manager), selectinload(Client.user),
+                  selectinload(Client.deals)))
+    return xlsx(export_clients(list((await db.execute(q)).scalars()), client_title), "clients.xlsx")
+
+
+MAX_IMPORT = 10 * 1024 * 1024
+
+
+@router.post("/import/clients")
+async def clients_import(request: Request, file: UploadFile, user: User = Depends(staff_user),
+                         db: AsyncSession = Depends(get_db)):
+    from .crm_excel import load_clients
+    data = await file.read(MAX_IMPORT + 1)
+    if len(data) > MAX_IMPORT:
+        return await clients_page(request, error="Файл больше 10 МБ", user=user, db=db)
+    try:
+        items = load_clients(data, file.filename or "")
+    except Exception as e:
+        return await clients_page(request, error=f"Не получилось разобрать файл: {e}", user=user, db=db)
+    added = skipped = bad = 0
+    seen: set[str] = set()
+    for it in items:
+        if it["bad_inn"]:
+            bad += 1
+            continue
+        if it["inn"]:
+            if it["inn"] in seen or (await db.execute(select(Client.id).where(Client.inn == it["inn"]))).first():
+                skipped += 1
+                continue
+            seen.add(it["inn"])
+        client = Client(inn=it["inn"] or None, title=clean(it["title"]), source=clean(it["source"], 200)
+                        or "Импорт из файла", notes=(it["notes"] or None),
+                        manager_id=None if is_admin(user) else user.id)
+        if it["contact"] or it["phone"] or it["email"]:
+            client.contacts.append(Contact(name=clean(it["contact"], 200) or "Контакт",
+                                           position=clean(it["position"], 200), phone=clean(it["phone"], 50),
+                                           email=clean(it["email"], 255)))
+        db.add(client)
+        await db.flush()
+        log(db, client.id, user, f"Клиент загружен из файла {file.filename or ''}".strip())
+        added += 1
+    await db.commit()
+    parts = [f"Добавлено клиентов: {added}"]
+    if skipped:
+        parts.append(f"уже были в CRM: {skipped}")
+    if bad:
+        parts.append(f"с неверным ИНН: {bad}")
+    return await clients_page(request, notice=", ".join(parts), user=user, db=db)

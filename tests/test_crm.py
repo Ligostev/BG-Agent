@@ -228,3 +228,55 @@ def test_manager_sees_own_and_unassigned(tmp_path):
         assert "Клиент первого" in c.get("/crm/clients").text
         login(c, "m1@example.com")
         assert c.get("/crm/deals").status_code == 403
+
+
+def test_reports_and_excel(tmp_path):
+    import io
+
+    from openpyxl import Workbook, load_workbook
+
+    with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
+        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        a = c.post("/crm/clients", data={"inn": INN, "title": "ООО Альфа", "source": "Реклама"}).url.path
+        b = c.post("/crm/clients", data={"title": "ООО Бета", "source": "Рекомендация"}).url.path
+        for url, product, amount in ((a, "БГ на исполнение контракта", "1000000"),
+                                     (a, "БГ на участие (обеспечение заявки)", "50000"),
+                                     (b, "БГ на исполнение контракта", "2000000")):
+            c.post("/crm/deals", data={"client_id": url.rsplit("/", 1)[1], "product": product, "amount": amount})
+        c.post("/crm/deals/1/banks", data={"bank": "ВТБ"})
+        c.post("/crm/deals/1/banks/1", data={"status": "issued", "fee": "20000"})
+        c.post("/crm/deals/1", data={"stage": "issued", "product": "БГ на исполнение контракта",
+                                     "amount": "1000000", "commission": "8000"})
+        c.post("/crm/deals/3", data={"stage": "lost", "product": "БГ на исполнение контракта"})
+
+        page = c.get("/crm/reports").text
+        assert "Новых сделок</th><td>3" in page
+        assert "<b>1</b> на 1 000 000 ₽" in page and "<b>8 000 ₽</b>" in page
+        assert "Доля выдач среди закрытых</th><td>50%" in page
+        assert "Реклама" in page and "Рекомендация" in page and "ВТБ" in page and "20 000 ₽" in page
+        assert c.get("/crm/reports?period=year").status_code == 200
+
+        wb = load_workbook(io.BytesIO(c.get("/crm/deals.xlsx").content))
+        rows = list(wb.active.iter_rows(values_only=True))
+        assert rows[0][:5] == ("№", "Клиент", "ИНН", "Продукт", "Этап") and len(rows) == 4
+        assert rows[1][1] == "ООО Альфа" and rows[1][4] == "Выдана" and rows[1][6] == 8000
+        wb = load_workbook(io.BytesIO(c.get("/crm/clients.xlsx").content))
+        assert [r[0] for r in wb.active.iter_rows(min_row=2, values_only=True)] == ["ООО Альфа", "ООО Бета"]
+
+        # Загрузка списка клиентов: заголовок не в первой строке, ИНН без ведущего нуля, дубль, мусор.
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Список клиентов"])
+        ws.append(["ИНН", "Наименование компании", "Контактное лицо", "Телефон", "Откуда"])
+        ws.append([INN, "дубль", "", "", ""])
+        ws.append([772345678, "ООО Гамма", "Анна", "+7 999", "Выставка"])   # 9 цифр: ноль съеден Excel
+        ws.append(["123", "Плохой ИНН", "", "", ""])
+        ws.append(["", "ИП Дельта", "", "", ""])
+        buf = io.BytesIO()
+        wb.save(buf)
+        r = c.post("/crm/import/clients", files={"file": ("list.xlsx", buf.getvalue(), "application/octet-stream")})
+        assert "Добавлено клиентов: 2, уже были в CRM: 1, с неверным ИНН: 1" in r.text
+        listing = c.get("/crm/clients?q=гамма").text
+        assert "ООО Гамма" in listing and "0772345678" in listing and "Выставка" in listing
+        bad = c.post("/crm/import/clients", files={"file": ("x.csv", "a;b\n1;2\n".encode(), "text/csv")})
+        assert "Не получилось разобрать" in bad.text
