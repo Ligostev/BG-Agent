@@ -10,15 +10,19 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, Message
 
-from pbnalog import CaptchaRequired, NotFound, PbNalogClient, PbNalogError, classify
+from checks import CompanyChecker
+from fssp import FsspClient
+from pbnalog import PbNalogClient, classify
+from rnp import RnpClient
 
 from .captcha import ChatCaptchaSolver, current_chat
-from .formatting import format_result
+from .formatting import format_report
 
 log = logging.getLogger(__name__)
 
-HELP = ("Пришлите ИНН или ОГРН компании или ИП, и я покажу сведения "
-        "из сервиса ФНС «Прозрачный бизнес».")
+HELP = ("Пришлите ИНН или ОГРН компании или ИП, и я проверю её по сервису ФНС "
+        "«Прозрачный бизнес», реестру недобросовестных поставщиков и банку данных "
+        "исполнительных производств ФССП.")
 
 
 async def link_account(code: str, telegram_id: int) -> str:
@@ -44,7 +48,7 @@ async def link_account(code: str, telegram_id: int) -> str:
     return f"Готово, Telegram привязан к кабинету {data.get('email') or ''}.{extra}"
 
 
-def build_dispatcher(bot: Bot, pb: PbNalogClient, solver: ChatCaptchaSolver) -> Dispatcher:
+def build_dispatcher(checker: CompanyChecker, solver: ChatCaptchaSolver) -> Dispatcher:
     dp = Dispatcher()
 
     @dp.message(CommandStart())
@@ -64,22 +68,11 @@ def build_dispatcher(bot: Bot, pb: PbNalogClient, solver: ChatCaptchaSolver) -> 
             await message.answer("Это не похоже на корректный ИНН или ОГРН. " + HELP)
             return
         current_chat.set(message.chat.id)
-        await message.answer("Ищу в базе ФНС…")
-        try:
-            result = await pb.lookup(message.text)
-        except NotFound:
-            await message.answer("В «Прозрачном бизнесе» ничего не найдено.")
-            return
-        except (CaptchaRequired, asyncio.TimeoutError):
-            await message.answer("Капча не пройдена, попробуйте ещё раз.")
-            return
-        except PbNalogError:
-            log.exception("ошибка pb.nalog.ru")
-            await message.answer("Сайт ФНС ответил ошибкой, попробуйте позже.")
-            return
-        raw = json.dumps(result, ensure_ascii=False, indent=2).encode()
-        await message.answer(format_result(result))
-        await message.answer_document(BufferedInputFile(raw, f"{result['hit'].get('inn', 'card')}.json"))
+        await message.answer("Проверяю: ФНС, реестр недобросовестных поставщиков, ФССП…")
+        report = await checker.check(message.text)
+        raw = json.dumps(report, ensure_ascii=False, indent=2).encode()
+        await message.answer(format_report(report))
+        await message.answer_document(BufferedInputFile(raw, f"{report['inn'] or report['query']}.json"))
 
     return dp
 
@@ -88,8 +81,11 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     bot = Bot(os.environ["BOT_TOKEN"], default=DefaultBotProperties(parse_mode="HTML"))
     solver = ChatCaptchaSolver(bot)
-    async with PbNalogClient(solver=solver) as pb:
-        await build_dispatcher(bot, pb, solver).start_polling(bot)
+    fssp_solver = solver.with_caption("Сайт ФССП просит капчу. Пришлите символы с картинки.")
+    async with PbNalogClient(solver=solver) as pb, RnpClient() as rnp, \
+            FsspClient(solver=fssp_solver) as fssp:
+        checker = CompanyChecker(pb, rnp, fssp)
+        await build_dispatcher(checker, solver).start_polling(bot)
 
 
 if __name__ == "__main__":
