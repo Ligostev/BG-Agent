@@ -7,7 +7,7 @@ import os
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, Message
 
 from checks import CompanyChecker
@@ -25,20 +25,27 @@ HELP = ("Пришлите ИНН или ОГРН компании или ИП, �
         "исполнительных производств ФССП.")
 
 
-async def link_account(code: str, telegram_id: int) -> str:
-    """Привязка чата к учётке кабинета по коду из ссылки t.me/<бот>?start=link_<код>."""
+async def cabinet_post(path: str, telegram_id: int, payload: dict | None = None):
+    """Запрос к API кабинета от имени пользователя бота. None — кабинет не настроен или недоступен."""
     import httpx
     base = os.environ.get("CABINET_URL", "http://127.0.0.1:8000").rstrip("/")
     token = os.environ.get("BOT_API_TOKEN", "")
     if not token:
-        return "Привязка не настроена: на сервере не задан BOT_API_TOKEN."
+        return None
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(f"{base}/api/telegram/link", json={"code": code},
-                                  headers={"X-Bot-Token": token, "X-Telegram-Id": str(telegram_id)})
+            return await client.post(f"{base}{path}", json=payload or {},
+                                     headers={"X-Bot-Token": token, "X-Telegram-Id": str(telegram_id)})
     except httpx.HTTPError:
         log.exception("кабинет недоступен")
-        return "Кабинет сейчас недоступен, попробуйте позже."
+        return None
+
+
+async def link_account(code: str, telegram_id: int) -> str:
+    """Привязка чата к учётке кабинета по коду из ссылки t.me/<бот>?start=link_<код>."""
+    r = await cabinet_post("/api/telegram/link", telegram_id, {"code": code})
+    if r is None:
+        return "Кабинет сейчас недоступен или не настроен, попробуйте позже."
     if r.status_code == 404:
         return "Ссылка устарела. Получите новую в кабинете на странице «Задачи»."
     if r.status_code != 200:
@@ -57,6 +64,15 @@ def build_dispatcher(checker: CompanyChecker, solver: ChatCaptchaSolver) -> Disp
             await message.answer(await link_account(command.args[5:], message.chat.id))
             return
         await message.answer(HELP)
+
+    @dp.message(Command("stop"))
+    async def stop(message: Message) -> None:
+        r = await cabinet_post("/api/telegram/stop", message.chat.id)
+        if r is None or r.status_code != 200:
+            await message.answer("Не получилось, попробуйте позже.")
+            return
+        await message.answer("Готово, рекламные сообщения в Telegram больше приходить не будут. "
+                             "Уведомления по вашим заявкам это не затрагивает.")
 
     @dp.message(F.text, lambda m: solver.is_waiting(m.chat.id))
     async def captcha_answer(message: Message) -> None:

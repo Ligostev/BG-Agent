@@ -26,6 +26,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), default="client")
     # Одноразовый код для привязки Telegram к учётке: t.me/<бот>?start=link_<код>.
     telegram_code: Mapped[str | None] = mapped_column(String(32), unique=True)
+    # Служебные уведомления по своим заявкам (этап сделки, ответ банка). Не реклама.
+    notify: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     checks: Mapped[list["Check"]] = relationship(back_populates="user")
@@ -275,3 +277,74 @@ class Task(Base):
     client: Mapped[Client | None] = relationship()
     deal: Mapped[Deal | None] = relationship()
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
+
+
+class Consent(Base):
+    """Согласие на обработку ПДн (kind=pd) или на рекламные сообщения (kind=ads) по одному адресу.
+
+    Хранится всё, что нужно доказать согласие (ст. 18 закона «О рекламе»): когда, где, в какой
+    формулировке и с какого IP. Отзыв не удаляет запись, а ставит revoked_at.
+    """
+
+    __tablename__ = "consents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))               # pd | ads
+    channel: Mapped[str] = mapped_column(String(16))           # email | telegram | sms
+    address: Mapped[str] = mapped_column(String(255), index=True)   # email, chat id или телефон
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), index=True)
+    source: Mapped[str] = mapped_column(String(300))           # где получено
+    wording: Mapped[str] = mapped_column(Text)                 # текст согласия на момент получения
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))   # сотрудник, если внёс вручную
+    token: Mapped[str] = mapped_column(String(32), unique=True)     # для ссылки «Отписаться»
+    given_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoke_source: Mapped[str | None] = mapped_column(String(200))
+
+    client: Mapped[Client | None] = relationship()
+
+    @property
+    def active(self) -> bool:
+        return self.revoked_at is None
+
+
+class Campaign(Base):
+    """Рекламная рассылка по клиентам, давшим согласие."""
+
+    __tablename__ = "campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(300))
+    channel: Mapped[str] = mapped_column(String(16))           # email | telegram
+    subject: Mapped[str | None] = mapped_column(String(300))   # тема письма
+    body: Mapped[str] = mapped_column(Text)
+    advertiser: Mapped[str | None] = mapped_column(String(300))   # кто рекламодатель (для пометки)
+    erid: Mapped[str | None] = mapped_column(String(100))      # токен маркировки, если получен в ОРД
+    segment: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="draft")   # draft | queued | sent
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Outbox(Base):
+    """Очередь исходящих сообщений: уведомления клиентам и письма рассылок. Отправляет app.crm_tasks."""
+
+    __tablename__ = "outbox"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))               # service | ads
+    channel: Mapped[str] = mapped_column(String(16))
+    address: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str | None] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    campaign_id: Mapped[int | None] = mapped_column(ForeignKey("campaigns.id"), index=True)
+    consent_id: Mapped[int | None] = mapped_column(ForeignKey("consents.id"))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)   # queued | sent | failed | skipped
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

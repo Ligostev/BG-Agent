@@ -34,9 +34,13 @@ async def run_check(ctx: dict, check_id: int) -> None:
 async def crm_reminders(ctx: dict) -> dict:
     """Задачи «гарантия истекает» и напоминания сотрудникам в Telegram."""
     from .crm_tasks import send_reminders, telegram_sender
+    from .outreach import Mailer, deliver
     send, close = telegram_sender(settings.bot_token) if settings.bot_token else (None, None)
+    sm = make_sessionmaker(ctx["engine"])
     try:
-        return await send_reminders(make_sessionmaker(ctx["engine"]), send, settings.public_url)
+        out = await send_reminders(sm, send, settings.public_url)
+        out.update(await deliver(sm, telegram=send, mailer=Mailer(settings), public_url=settings.public_url))
+        return out
     finally:
         if close:
             await close()

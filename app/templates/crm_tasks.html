@@ -63,7 +63,7 @@
     <p>Откройте ссылку и нажмите «Старт»: <a href="https://t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}" target="_blank" rel="noopener">t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}</a></p>
     {% else %}<p>Отправьте боту сообщение: <code>/start link_{{ user.telegram_code }}</code></p>{% endif %}
   {% else %}
-  <form method="post" action="/crm/telegram/link"><button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
+  <form method="post" action="/telegram/link"><input type="hidden" name="back" value="/crm/tasks"><button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
   {% endif %}
 </div>
 

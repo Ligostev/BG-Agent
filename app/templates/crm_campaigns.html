@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Рассылки{% endblock %}
+{% block wrapclass %} wide{% endblock %}
+{% block content %}
+<div class="card">
+  <h3 style="margin-top:0">Рекламные рассылки</h3>
+  <p class="muted">Уходят только тем, кто дал согласие на рекламу по этому каналу и не отписался.
+    В каждое сообщение автоматически добавляются пометка «Реклама», рекламодатель и способ отписаться.
+    Уведомления клиентам по их заявкам отправляются сами и сюда не относятся.</p>
+  {% if not operator_ready %}<p class="r-warn">Не заданы реквизиты (OPERATOR_NAME, OPERATOR_INN): без них тексты согласий и пометка «Реклама» неполные.</p>{% endif %}
+  {% if not mail_ready %}<p class="muted">Почта не настроена (SMTP_HOST, SMTP_FROM): письма будут ждать в очереди.</p>{% endif %}
+  {% if not bot_ready %}<p class="muted">Бот не настроен (BOT_TOKEN): сообщения в Telegram будут ждать в очереди.</p>{% endif %}
+  {% if campaigns %}
+  <table>
+    {% for c in campaigns %}{% set st = stats.get(c.id, {}) %}
+    <tr><td style="width:auto"><a href="/crm/campaigns/{{ c.id }}">{{ c.title }}</a>
+        <div class="muted">{{ c.channel }} · {{ segments.get(c.segment.get('group', 'all')) }}</div></td>
+      <td>{{ {'draft': 'Черновик', 'queued': 'Отправляется', 'sent': 'Отправлена'}[c.status] }}</td>
+      <td class="muted">{% if st %}отправлено {{ st.get('sent', 0) }}, в очереди {{ st.get('queued', 0) }}, ошибок {{ st.get('failed', 0) }}, пропущено {{ st.get('skipped', 0) }}{% endif %}</td>
+      <td class="muted">{{ c.created_at | msk('%d.%m.%Y') }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+<div class="card">
+  <h3 style="margin-top:0">Новая рассылка</h3>
+  <form method="post" action="/crm/campaigns" class="grid">
+    <div class="row">
+      <input type="text" name="title" placeholder="Название для себя" required style="flex:2">
+      <select name="channel" style="flex:1"><option value="email">Email</option><option value="telegram">Telegram</option></select>
+      <select name="group" style="flex:1">{% for k, t in segments.items() %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select>
+      <input type="text" name="source" placeholder="Источник клиента содержит…" style="flex:1">
+    </div>
+    <label style="margin-top:8px">Тема письма<input type="text" name="subject"></label>
+    <label>Текст<textarea name="body" rows="6" required></textarea></label>
+    <div class="row">
+      <input type="text" name="advertiser" placeholder="Рекламодатель (по умолчанию реквизиты оператора)">
+      <input type="text" name="erid" placeholder="erid, если рекламу регистрировали в ОРД">
+    </div>
+    <button type="submit" style="margin-top:8px">Создать черновик</button>
+  </form>
+</div>
+{% endblock %}
