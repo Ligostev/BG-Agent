@@ -25,7 +25,8 @@ from .sources import Source
 def default_sources() -> list[Source]:
     from .sources.bankrot import BankruptcySource
     from .sources.fns import FnsSource
-    return [FnsSource(), BankruptcySource()]
+    from .sources.koap1928 import Koap1928Source
+    return [FnsSource(), BankruptcySource(), Koap1928Source()]
 
 
 def create_app(settings: Settings | None = None, sources: list[Source] | None = None,
