@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .checks import format_status
+from .crm_tasks import msk
 from .deps import answer_captcha, create_check, get_db, normalize_query, own_check, session_user, web_user
 from .models import Check, CheckStatus, User
 from .security import hash_password, verify_password
@@ -19,6 +20,7 @@ from .security import hash_password, verify_password
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["status"] = format_status
 templates.env.globals["CheckStatus"] = CheckStatus
+templates.env.filters["msk"] = msk
 
 router = APIRouter(include_in_schema=False)
 

@@ -50,7 +50,7 @@
 <body>
   <header><div class="wrap">
     <nav><a class="brand" href="/">Проверка контрагентов</a>
-      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · {% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
+      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · {% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
     {% if user %}
       <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
         <button class="link" type="submit">Выйти</button></form>

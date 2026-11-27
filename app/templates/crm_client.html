@@ -7,16 +7,25 @@
   <h2 style="margin-top:0">{{ client_title(client) }}</h2>
   <p class="muted">{% if client.inn %}ИНН {{ client.inn }}{% endif %}{% if client.ogrn %} · ОГРН {{ client.ogrn }}{% endif %}
     {% if client.user %} · в кабинете: {{ client.user.email or 'через Telegram' }}{% endif %}
-    · в CRM с {{ client.created_at.strftime("%d.%m.%Y") }}</p>
+    · в CRM с {{ client.created_at | msk("%d.%m.%Y") }}</p>
   <form method="post" action="/crm/clients/{{ client.id }}" class="grid">
     <div class="row">
       <label>Название<br><input type="text" class="sm" name="title" value="{{ client.title or '' }}"></label>
       <label>ИНН<br><input type="text" class="sm" name="inn" inputmode="numeric" value="{{ client.inn or '' }}"></label>
       <label>Откуда пришёл<br><input type="text" class="sm" name="source" value="{{ client.source or '' }}"></label>
+      <label>Ответственный<br><select name="manager_id"><option value="">не назначен</option>
+        {% for s in staff %}<option value="{{ s.id }}" {{ 'selected' if s.id == client.manager_id }}>{{ s.email }}</option>{% endfor %}
+      </select></label>
     </div>
     <label>Заметки о клиенте<textarea name="notes" rows="2">{{ client.notes or '' }}</textarea></label>
     <button type="submit">Сохранить</button>
   </form>
+</div>
+
+<div class="card" id="tasks">
+  <h3 style="margin-top:0">Задачи</h3>
+  {% set back = '/crm/clients/%d#tasks' % client.id %}{% set client_id = client.id %}
+  {% include "_crm_tasks.html" %}
 </div>
 
 <div class="card" id="deals">
@@ -27,7 +36,7 @@
     <tr><td style="width:auto"><a href="/crm/deals/{{ d.id }}">№{{ d.id }} · {{ d.product }}</a>
         {% if d.purchase_number %}<div class="muted">закупка № {{ d.purchase_number }}</div>{% endif %}</td>
       <td>{{ money(d.amount) }}</td><td><span class="badge">{{ d.stage_title }}</span></td>
-      <td class="muted">{{ d.created_at.strftime("%d.%m.%Y") }}</td></tr>
+      <td class="muted">{{ d.created_at | msk("%d.%m.%Y") }}</td></tr>
     {% endfor %}
   </table>
   {% else %}<p class="muted">Сделок пока нет.</p>{% endif %}
@@ -70,7 +79,7 @@
     {% for c in checks %}
     <tr><td style="width:auto"><a href="/checks/{{ c.id }}">{{ c.title or c.query }}</a></td>
       <td><span class="badge s-{{ c.status }}">{{ c.status | status }}</span></td>
-      <td class="muted">{{ c.created_at.strftime("%d.%m.%Y %H:%M") }}</td></tr>
+      <td class="muted">{{ c.created_at | msk("%d.%m.%Y %H:%M") }}</td></tr>
     {% endfor %}
   </table>
   {% else %}<p class="muted">{{ 'Проверок по этому ИНН ещё не было.' if client.inn else 'Укажите ИНН, чтобы проверить клиента.' }}</p>{% endif %}

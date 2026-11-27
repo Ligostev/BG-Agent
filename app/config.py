@@ -26,6 +26,12 @@ class Settings:
     # Менеджеров назначает администратор (или python -m app.roles email manager).
     admin_emails: tuple[str, ...] = field(default_factory=lambda: tuple(
         e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()))
+    # Telegram: токен бота для напоминаний сотрудникам и его имя для ссылки привязки (без @).
+    bot_token: str = field(default_factory=lambda: os.environ.get("BOT_TOKEN", ""))
+    bot_username: str = field(default_factory=lambda: os.environ.get("BOT_USERNAME", "").lstrip("@"))
+    # Адрес кабинета для ссылок в напоминаниях; по умолчанию https://<DOMAIN>.
+    public_url: str = field(default_factory=lambda: (os.environ.get("PUBLIC_URL") or (
+        f"https://{os.environ['DOMAIN']}" if os.environ.get("DOMAIN") else "")).rstrip("/"))
 
 
 settings = Settings()

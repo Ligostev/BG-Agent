@@ -31,7 +31,7 @@
         {% if d.client.inn %}<div class="muted">ИНН {{ d.client.inn }}</div>{% endif %}</td>
       <td style="width:14%">{{ money(d.amount) }}</td>
       <td style="width:18%" class="muted">{% for b in d.banks %}{{ b.bank }}: {{ b.status_title }}{% if not loop.last %}<br>{% endif %}{% else %}банков нет{% endfor %}</td>
-      <td style="width:10%" class="muted">{{ d.updated_at.strftime("%d.%m") }}</td>
+      <td style="width:10%" class="muted">{{ d.updated_at | msk("%d.%m") }}</td>
     </tr>
     {% endfor %}
   </table>

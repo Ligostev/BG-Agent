@@ -7,7 +7,7 @@ import os
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, Message
 
 from pbnalog import CaptchaRequired, NotFound, PbNalogClient, PbNalogError, classify
@@ -21,11 +21,37 @@ HELP = ("Пришлите ИНН или ОГРН компании или ИП, �
         "из сервиса ФНС «Прозрачный бизнес».")
 
 
+async def link_account(code: str, telegram_id: int) -> str:
+    """Привязка чата к учётке кабинета по коду из ссылки t.me/<бот>?start=link_<код>."""
+    import httpx
+    base = os.environ.get("CABINET_URL", "http://127.0.0.1:8000").rstrip("/")
+    token = os.environ.get("BOT_API_TOKEN", "")
+    if not token:
+        return "Привязка не настроена: на сервере не задан BOT_API_TOKEN."
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(f"{base}/api/telegram/link", json={"code": code},
+                                  headers={"X-Bot-Token": token, "X-Telegram-Id": str(telegram_id)})
+    except httpx.HTTPError:
+        log.exception("кабинет недоступен")
+        return "Кабинет сейчас недоступен, попробуйте позже."
+    if r.status_code == 404:
+        return "Ссылка устарела. Получите новую в кабинете на странице «Задачи»."
+    if r.status_code != 200:
+        return "Не получилось привязать, попробуйте позже."
+    data = r.json()
+    extra = " Сюда будут приходить напоминания по задачам." if data.get("staff") else ""
+    return f"Готово, Telegram привязан к кабинету {data.get('email') or ''}.{extra}"
+
+
 def build_dispatcher(bot: Bot, pb: PbNalogClient, solver: ChatCaptchaSolver) -> Dispatcher:
     dp = Dispatcher()
 
     @dp.message(CommandStart())
-    async def start(message: Message) -> None:
+    async def start(message: Message, command: CommandObject) -> None:
+        if command.args and command.args.startswith("link_"):
+            await message.answer(await link_account(command.args[5:], message.chat.id))
+            return
         await message.answer(HELP)
 
     @dp.message(F.text, lambda m: solver.is_waiting(m.chat.id))

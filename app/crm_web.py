@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import secrets
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .crm import client_checks, client_title, fill_from_checks, log, set_stage
+from .crm_tasks import MSK, aware, parse_date, parse_due
 from .deps import create_check, get_db, normalize_query, staff_user
-from .models import Activity, BankStatus, Client, Contact, Deal, DealBank, DealStage, User
+from .models import (STAFF_ROLES, Activity, BankStatus, Client, Contact, Deal, DealBank, DealStage, Task, User,
+                     utcnow)
 from .tenders_web import _float, money
 from .web import go, render
 
@@ -28,6 +33,20 @@ def ctx(**kw) -> dict:
     return dict(money=money, stages=DealStage.TITLES, open_stages=DealStage.OPEN,
                 bank_statuses=BankStatus.TITLES, banks=BANKS, products=PRODUCTS,
                 client_title=client_title, **kw)
+
+
+async def staff_list(db: AsyncSession) -> list[User]:
+    return list((await db.execute(select(User).where(User.role.in_(STAFF_ROLES)).order_by(User.email))).scalars())
+
+
+def task_query():
+    return select(Task).options(selectinload(Task.assignee), selectinload(Task.deal),
+                                selectinload(Task.client).selectinload(Client.user))
+
+
+async def open_tasks(db: AsyncSession, *where) -> list[Task]:
+    q = task_query().where(Task.done_at.is_(None), *where).order_by(Task.due_at.is_(None), Task.due_at, Task.id)
+    return list((await db.execute(q)).scalars())
 
 
 def clean(raw: str, limit: int = 500) -> str | None:
@@ -106,13 +125,14 @@ async def deal_create(request: Request, client_id: int = Form(), product: str = 
 async def deal_page(deal_id: int, request: Request, user: User = Depends(staff_user),
                     db: AsyncSession = Depends(get_db)):
     deal = await get_deal(db, deal_id)
-    return render(request, "crm_deal.html", **ctx(user=user, deal=deal,
-                                                   log=await activities(db, deal.client_id, deal.id)))
+    return render(request, "crm_deal.html", **ctx(
+        user=user, deal=deal, log=await activities(db, deal.client_id, deal.id),
+        tasks=await open_tasks(db, Task.deal_id == deal.id), staff=await staff_list(db)))
 
 
 @router.post("/deals/{deal_id}")
 async def deal_update(deal_id: int, stage: str = Form(""), product: str = Form(""), amount: str = Form(""),
-                      commission: str = Form(""), purchase_number: str = Form(""),
+                      commission: str = Form(""), purchase_number: str = Form(""), expires_at: str = Form(""),
                       user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
     deal = await get_deal(db, deal_id)
     if stage:
@@ -121,6 +141,7 @@ async def deal_update(deal_id: int, stage: str = Form(""), product: str = Form("
     deal.amount = _float(amount)
     deal.commission = _float(commission)
     deal.purchase_number = clean(purchase_number, 32)
+    deal.expires_at = parse_date(expires_at)
     await db.commit()
     return go(f"/crm/deals/{deal.id}")
 
@@ -224,12 +245,14 @@ async def client_page(client_id: int, request: Request, user: User = Depends(sta
     if (client.title, client.ogrn) != before:
         await db.commit()
     return render(request, "crm_client.html", **ctx(
-        user=user, client=client, checks=await client_checks(db, client), log=await activities(db, client.id)))
+        user=user, client=client, checks=await client_checks(db, client), log=await activities(db, client.id),
+        tasks=await open_tasks(db, Task.client_id == client.id), staff=await staff_list(db)))
 
 
 @router.post("/clients/{client_id}")
 async def client_update(client_id: int, request: Request, title: str = Form(""), inn: str = Form(""),
-                        source: str = Form(""), notes: str = Form(""), user: User = Depends(staff_user),
+                        source: str = Form(""), notes: str = Form(""), manager_id: str = Form(""),
+                        user: User = Depends(staff_user),
                         db: AsyncSession = Depends(get_db)):
     client = await get_client(db, client_id)
     digits = "".join(ch for ch in inn if ch.isdigit()) or None
@@ -242,6 +265,13 @@ async def client_update(client_id: int, request: Request, title: str = Form(""),
     client.title = clean(title)
     client.source = clean(source, 200)
     client.notes = (notes or "").strip()[:10000] or None
+    new_manager = int(manager_id) if manager_id.isdigit() else None
+    if new_manager != client.manager_id:
+        manager = await db.get(User, new_manager) if new_manager else None
+        if new_manager and (manager is None or not manager.is_staff):
+            raise HTTPException(400, "Ответственным может быть только сотрудник")
+        client.manager_id = new_manager
+        log(db, client.id, user, f"Ответственный: {manager.email if manager else 'не назначен'}")
     await db.commit()
     return go(f"/crm/clients/{client.id}")
 
@@ -286,3 +316,87 @@ async def client_note(client_id: int, text: str = Form(), kind: str = Form("note
         log(db, client.id, user, text.strip()[:5000], kind=kind if kind in ("note", "call") else "note")
         await db.commit()
     return go(f"/crm/clients/{client.id}#log")
+
+
+# --- Задачи ---------------------------------------------------------------------------------------
+
+def back_url(raw: str, default: str = "/crm/tasks") -> str:
+    return raw if raw.startswith("/crm/") and "//" not in raw else default
+
+
+@router.get("/tasks")
+async def tasks_page(request: Request, who: str = "me", user: User = Depends(staff_user),
+                     db: AsyncSession = Depends(get_db)):
+    where = [] if who == "all" else [or_(Task.assignee_id == user.id, Task.assignee_id.is_(None))]
+    tasks = await open_tasks(db, *where)
+    now = utcnow()
+    end_of_day = (now.astimezone(MSK).replace(hour=23, minute=59, second=59))
+    groups = {"Просрочено": [], "Сегодня": [], "Дальше": [], "Без срока": []}
+    for t in tasks:
+        due = aware(t.due_at)
+        key = ("Без срока" if due is None else "Просрочено" if due < now
+               else "Сегодня" if due <= end_of_day else "Дальше")
+        groups[key].append(t)
+    done = list((await db.execute(task_query().where(Task.done_at.is_not(None), *where)
+                                  .order_by(Task.done_at.desc()).limit(20))).scalars())
+    settings = request.app.state.settings
+    clients = list((await db.execute(select(Client).options(selectinload(Client.user))
+                                     .order_by(Client.id.desc()).limit(500))).scalars())
+    return render(request, "crm_tasks.html", **ctx(
+        user=user, who=who, groups=groups, done=done, staff=await staff_list(db), clients=clients,
+        bot_username=settings.bot_username, bot_ready=bool(settings.bot_token)))
+
+
+@router.post("/tasks")
+async def task_create(title: str = Form(), due: str = Form(""), assignee_id: str = Form(""),
+                      client_id: str = Form(""), deal_id: str = Form(""), remind: str = Form(""),
+                      back: str = Form(""), user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    deal = await get_deal(db, int(deal_id)) if deal_id.isdigit() else None
+    client = deal.client if deal else (await get_client(db, int(client_id)) if client_id.isdigit() else None)
+    assignee = int(assignee_id) if assignee_id.isdigit() else None
+    if assignee_id == "me":
+        assignee = user.id
+    elif assignee_id == "" and client is not None:
+        assignee = client.manager_id
+    text = clean(title, 500)
+    if text:
+        db.add(Task(title=text, due_at=parse_due(due), assignee_id=assignee, author_id=user.id,
+                    client_id=client.id if client else None, deal_id=deal.id if deal else None,
+                    remind=bool(remind)))
+        if client is not None:
+            log(db, client.id, user, f"Задача: {text}", deal_id=deal.id if deal else None)
+        await db.commit()
+    return go(back_url(back))
+
+
+@router.post("/tasks/{task_id}/done")
+async def task_done(task_id: int, back: str = Form(""), user: User = Depends(staff_user),
+                    db: AsyncSession = Depends(get_db)):
+    task = await db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(404, "Задача не найдена")
+    task.done_at = None if task.done_at else utcnow()
+    if task.done_at and task.client_id:
+        log(db, task.client_id, user, f"Выполнено: {task.title}", deal_id=task.deal_id)
+    await db.commit()
+    return go(back_url(back))
+
+
+@router.post("/tasks/{task_id}/postpone")
+async def task_postpone(task_id: int, days: int = Form(1), back: str = Form(""),
+                        user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    task = await db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(404, "Задача не найдена")
+    base = max(aware(task.due_at) or utcnow(), utcnow())
+    task.due_at = base + timedelta(days=max(1, min(days, 30)))
+    task.reminded_at = None
+    await db.commit()
+    return go(back_url(back))
+
+
+@router.post("/telegram/link")
+async def telegram_link(user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    user.telegram_code = secrets.token_urlsafe(12)
+    await db.commit()
+    return go("/crm/tasks#telegram")

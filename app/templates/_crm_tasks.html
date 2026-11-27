@@ -1,0 +1,30 @@
+{# Список открытых задач и форма новой; ожидает tasks, staff, back и (необязательно) client_id / deal_id #}
+{% if tasks %}
+<table>
+  {% for t in tasks %}
+  <tr>
+    <td style="width:auto">{{ t.title }}
+      <div class="muted">{% if t.due_at %}до {{ t.due_at | msk }}{% else %}без срока{% endif %}
+        · {{ t.assignee.email if t.assignee else 'любой сотрудник' }}</div></td>
+    <td style="width:1%; white-space:nowrap">
+      <form method="post" action="/crm/tasks/{{ t.id }}/done" style="display:inline">
+        <input type="hidden" name="back" value="{{ back }}"><button type="submit">Готово</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p class="muted">Открытых задач нет.</p>{% endif %}
+<form method="post" action="/crm/tasks" class="row" style="margin-top:10px; align-items:center">
+  <input type="hidden" name="back" value="{{ back }}">
+  {% if client_id %}<input type="hidden" name="client_id" value="{{ client_id }}">{% endif %}
+  {% if deal_id %}<input type="hidden" name="deal_id" value="{{ deal_id }}">{% endif %}
+  <input type="text" name="title" placeholder="Что сделать: перезвонить, запросить баланс…" required style="flex:3">
+  <input type="datetime-local" name="due" class="sm" style="flex:1">
+  <select name="assignee_id" style="flex:1">
+    <option value="">{{ 'Ответственному' if client_id or deal_id else 'Любому' }}</option>
+    <option value="me">Мне</option>
+    {% for s in staff %}<option value="{{ s.id }}">{{ s.email }}</option>{% endfor %}
+  </select>
+  <label style="flex:0; white-space:nowrap"><input type="checkbox" name="remind" value="1" checked> напомнить</label>
+  <button type="submit" style="flex:0">Добавить</button>
+</form>

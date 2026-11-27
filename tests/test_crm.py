@@ -125,3 +125,64 @@ def test_old_database_gets_role_column(tmp_path):
     db.close()
     with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
         assert c.post("/register", data={"email": ADMIN, "password": "password1"}).url.path == "/crm/deals"
+
+
+def test_tasks_and_reminders(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from app.crm_tasks import parse_due, send_reminders
+
+    sent = []
+
+    async def send(chat, text):
+        sent.append((chat, text))
+
+    with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
+        sm = c.app.state.sessionmaker
+        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        client_url = c.post("/crm/clients", data={"inn": INN, "title": "ООО Ромашка"}).url.path
+        cid = client_url.rsplit("/", 1)[1]
+
+        # Привязка Telegram: код из кабинета, бот присылает его в API.
+        c.post("/crm/telegram/link")
+        page = c.get("/crm/tasks").text
+        code = re.search(r"/start link_([\w-]+)", page).group(1)
+        hdr = {"X-Bot-Token": "bot-secret", "X-Telegram-Id": "555"}
+        assert c.post("/api/telegram/link", json={"code": "нет"}, headers=hdr).status_code == 404
+        assert c.post("/api/telegram/link", json={"code": code}, headers={"X-Telegram-Id": "555"}).status_code == 401
+        assert c.post("/api/telegram/link", json={"code": code}, headers=hdr).json()["staff"] is True
+        assert "Telegram подключён" in c.get("/crm/tasks").text
+
+        c.post(f"{client_url}", data={"title": "ООО Ромашка", "inn": INN, "manager_id": "1"})
+        assert "Ответственный: boss@example.com" in c.get(client_url).text
+        c.post("/crm/tasks", data={"title": "Перезвонить по балансу", "due": "2020-01-01T10:00",
+                                   "client_id": cid, "remind": "1", "back": client_url})
+        c.post("/crm/tasks", data={"title": "Без срока", "client_id": cid, "back": "https://evil.example"})
+        page = c.get(client_url).text
+        assert "Перезвонить по балансу" in page and "до 01.01.2020 10:00" in page
+        tasks = c.get("/crm/tasks").text
+        assert re.search(r"Просрочено.*?· 1.*Перезвонить по балансу", tasks, re.S)
+
+        # Выданная гарантия, которая скоро кончается, порождает задачу; напоминание уходит в Telegram.
+        c.post("/crm/deals", data={"client_id": cid, "product": "БГ на исполнение контракта"})
+        soon = (datetime.now(timezone.utc) + timedelta(days=10)).date().isoformat()
+        c.post("/crm/deals/1", data={"stage": "issued", "product": "БГ на исполнение контракта",
+                                     "expires_at": soon})
+        stats = c.portal.call(send_reminders, sm, send, "https://lk.example")
+        assert stats == {"created": 1, "sent": 2}
+        texts = [t for _, t in sent]
+        assert all(chat == 555 for chat, _ in sent)
+        assert any("Перезвонить по балансу" in t and "ООО Ромашка" in t and "https://lk.example/crm/tasks" in t
+                   for t in texts)
+        assert any("Гарантия по сделке №1 заканчивается" in t for t in texts)
+        # Повторный запуск ничего не шлёт и не дублирует задачу.
+        assert c.portal.call(send_reminders, sm, send, "") == {"created": 0, "sent": 0}
+
+        # Готово и «+1 день».
+        task_id = re.search(r'/crm/tasks/(\d+)/done', c.get(client_url).text).group(1)
+        c.post(f"/crm/tasks/{task_id}/done", data={"back": client_url})
+        assert "Выполнено:" in c.get(client_url).text
+        assert "Недавно выполненные" in c.get("/crm/tasks").text
+
+    assert parse_due("2026-11-28T10:00") == datetime(2026, 11, 28, 7, 0, tzinfo=timezone.utc)
+    assert parse_due("2026-11-28").hour == 7 and parse_due("мусор") is None

@@ -22,6 +22,8 @@
         value="{{ '%.0f' % deal.amount if deal.amount else '' }}"></label>
       <label>Комиссия брокера, ₽<br><input type="text" class="sm" name="commission" inputmode="numeric"
         value="{{ '%.0f' % deal.commission if deal.commission else '' }}"></label>
+      <label>Гарантия действует до<br><input type="date" class="sm" name="expires_at"
+        value="{{ deal.expires_at.isoformat() if deal.expires_at else '' }}"></label>
     </div>
     <button type="submit">Сохранить</button>
   </form>
@@ -53,6 +55,12 @@
     <button type="submit">Добавить</button>
   </form>
   <datalist id="banks-list">{% for b in banks %}<option value="{{ b }}">{% endfor %}</datalist>
+</div>
+
+<div class="card" id="tasks">
+  <h3 style="margin-top:0">Задачи по сделке</h3>
+  {% set back = '/crm/deals/%d#tasks' % deal.id %}{% set deal_id = deal.id %}
+  {% include "_crm_tasks.html" %}
 </div>
 
 <div class="card" id="log">

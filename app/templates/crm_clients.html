@@ -29,7 +29,7 @@
         <div class="muted">{% if c.inn %}ИНН {{ c.inn }}{% endif %}{% if c.user %} · кабинет: {{ c.user.email or 'Telegram' }}{% endif %}</div></td>
       <td style="width:25%" class="muted">{{ c.source or '' }}</td>
       <td style="width:20%">{% if open %}в работе: {{ open | length }}{% else %}<span class="muted">сделок в работе нет</span>{% endif %}</td>
-      <td style="width:10%" class="muted">{{ c.created_at.strftime("%d.%m.%Y") }}</td>
+      <td style="width:10%" class="muted">{{ c.created_at | msk("%d.%m.%Y") }}</td>
     </tr>
     {% endfor %}
   </table>

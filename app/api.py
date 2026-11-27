@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .deps import answer_captcha, api_user, create_check, get_db, normalize_query, own_check
@@ -88,3 +88,28 @@ async def api_captcha_answer(check_id: int, body: CaptchaIn, request: Request,
     if not await answer_captcha(request, db, check, body.answer):
         raise HTTPException(409, "Капча сейчас не нужна")
     return {"ok": True}
+
+
+class TelegramLinkIn(BaseModel):
+    code: str
+
+
+@router.post("/telegram/link")
+async def telegram_link(body: TelegramLinkIn, request: Request, db: AsyncSession = Depends(get_db),
+                        x_bot_token: str | None = Header(default=None),
+                        x_telegram_id: int | None = Header(default=None)) -> dict:
+    """Бот пересылает код из ссылки t.me/<бот>?start=link_<код>: привязываем чат к учётке кабинета."""
+    token = request.app.state.settings.bot_api_token
+    if not token or x_bot_token != token or not x_telegram_id:
+        raise HTTPException(401, "Нужен токен бота")
+    code = body.code.strip()
+    user = (await db.execute(select(User).where(User.telegram_code == code))).scalar_one_or_none() if code else None
+    if user is None:
+        raise HTTPException(404, "Ссылка устарела, получите новую в кабинете")
+    # Чат мог раньше принадлежать другой учётке (например, заведённой ботом): отвязываем его там.
+    await db.execute(update(User).where(User.telegram_id == x_telegram_id, User.id != user.id)
+                     .values(telegram_id=None))
+    user.telegram_id = x_telegram_id
+    user.telegram_code = None
+    await db.commit()
+    return {"ok": True, "email": user.email, "staff": user.is_staff}

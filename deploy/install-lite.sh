@@ -119,9 +119,31 @@ OnCalendar=*:0/15
 [Install]
 WantedBy=timers.target
 UNIT
+# CRM: задачи «гарантия истекает» и напоминания сотрудникам в Telegram (нужен BOT_TOKEN в env).
+cat > /etc/systemd/system/bg-agent-reminders.service <<UNIT
+[Unit]
+Description=BG-Agent: напоминания по задачам CRM
+
+[Service]
+Type=oneshot
+User=bg
+WorkingDirectory=$SRC
+EnvironmentFile=$HOME_DIR/env
+ExecStart=$HOME_DIR/venv/bin/python -m app.crm_tasks
+UNIT
+cat > /etc/systemd/system/bg-agent-reminders.timer <<UNIT
+[Unit]
+Description=BG-Agent: напоминания по задачам CRM каждые 5 минут
+
+[Timer]
+OnCalendar=*:0/5
+
+[Install]
+WantedBy=timers.target
+UNIT
 systemctl daemon-reload
 systemctl enable -q bg-agent
-systemctl enable -q --now bg-agent-tenders.timer bg-agent-embed.timer
+systemctl enable -q --now bg-agent-tenders.timer bg-agent-embed.timer bg-agent-reminders.timer
 systemctl restart bg-agent
 
 echo "== HTTPS"
