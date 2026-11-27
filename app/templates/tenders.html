@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Подбор закупок{% endblock %}
+{% block content %}
+{% if not eis_ready %}
+<div class="card"><b>Загрузка из ЕИС не настроена.</b>
+  <span class="muted">Добавьте EIS_TOKEN в настройки сервера, тогда каждое утро будут подгружаться новые закупки.</span></div>
+{% endif %}
+{% if error %}<div class="card error">{{ error }}</div>{% endif %}
+{% if notice %}<div class="card">{{ notice }}</div>{% endif %}
+
+<div class="card">
+  <h3 style="margin-top:0">Что вы поставляете</h3>
+  <form method="post" action="/tenders/profile" class="grid">
+    <label>Коды ОКПД2 <span class="muted">(через запятую, можно начало кода: 43, 43.21, 41.20.40)</span>
+      <input type="text" name="okpd2" value="{{ profile.okpd2 | join(', ') }}"></label>
+    <label>Регионы заказчиков <span class="muted">(коды: 77 — Москва, 50 — Московская обл., 78 — СПб)</span>
+      <input type="text" name="regions" value="{{ profile.regions | join(', ') }}"></label>
+    <label>Что вы делаете, своими словами <span class="muted">(подбор по смыслу: найдутся закупки
+      с похожим предметом, даже если слова другие)</span>
+      <textarea name="description" rows="2" style="width:100%; padding:10px 12px; border:1px solid var(--line);
+        border-radius:8px; font:inherit">{{ profile.description or '' }}</textarea>
+      {% if semantic == "off" %}<span class="muted">Подбор по смыслу на сервере пока не включён.</span>
+      {% elif semantic == "pending" and profile.description %}<span class="muted">Описание учтём в течение 15 минут.</span>{% endif %}
+    </label>
+    <label>Ключевые слова <span class="muted">(через запятую; словоформы и синонимы учитываются:
+      «кровля» найдёт и «кровельные работы», и «ремонт крыши»; «асфальт|щебень» — любое из слов;
+      «-проект» — исключить закупки с этим словом)</span>
+      <input type="text" name="keywords" value="{{ profile.keywords | join(', ') }}"></label>
+    <div style="margin-bottom:10px">Законы:
+      {% set chosen = profile.laws if profile.laws is not none else laws %}
+      {% for law in laws %}
+        <label style="display:inline; margin-right:12px"><input type="checkbox" name="laws" value="{{ law }}"
+          {% if law in chosen %}checked{% endif %}> {{ law }}</label>
+      {% endfor %}
+    </div>
+    <div class="row">
+      <label>НМЦК от, ₽ <input type="text" name="price_min" inputmode="numeric"
+             value="{{ '%.0f' % profile.price_min if profile.price_min else '' }}"></label>
+      <label>до, ₽ <input type="text" name="price_max" inputmode="numeric"
+             value="{{ '%.0f' % profile.price_max if profile.price_max else '' }}"></label>
+      <label>Дней до конца подачи, не меньше <input type="text" name="min_days_left" inputmode="numeric"
+             value="{{ profile.min_days_left if profile.min_days_left is not none else 2 }}"></label>
+    </div>
+    <div><button type="submit">Сохранить</button></div>
+  </form>
+  <form method="post" action="/tenders/profile/import" enctype="multipart/form-data" style="margin-top:14px">
+    <span class="muted">Или заполните по своим прошлым контрактам: ЕИС → «Реестр контрактов» → ИНН поставщика → «Выгрузить», файл .xlsx или .csv.</span>
+    <div class="row" style="margin-top:6px"><input type="file" name="file" accept=".xlsx,.csv" required>
+      <button type="submit">Загрузить</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Подходящие закупки</h3>
+  {% if matches %}
+  <table>
+    {% for m in matches %}{% set n = m.notice %}
+    <tr>
+      <td style="width:auto">
+        <a href="{{ n.url or eis_url(n.purchase_number) }}" target="_blank" rel="noopener">№ {{ n.purchase_number }}</a>
+        <div>{{ n.subject }}</div>
+        <div class="muted">{{ n.law }} · {{ n.customer }}{% if n.placing_way %} · {{ n.placing_way }}{% endif %}</div>
+        <div class="muted">{{ m.reasons | join(' · ') }}</div>
+      </td>
+      <td style="width:30%">
+        <div><b>{{ money(n.max_price) }}</b></div>
+        {% for product, amount in m.products %}
+          <div class="muted">{{ product }}{% if amount %}: {{ money(amount) }}{% endif %}</div>
+        {% endfor %}
+        <form method="post" action="/tenders/{{ n.purchase_number }}/guarantee" style="margin-top:6px">
+          <button type="submit">Нужна гарантия</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% elif profile.okpd2 or profile.keywords or profile.description %}
+  <p class="muted">Пока ничего не нашлось. Новые закупки подгружаются каждое утро.</p>
+  {% else %}
+  <p class="muted">Заполните коды ОКПД2, ключевые слова или описание, и здесь появятся закупки.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="requests">
+  <h3 style="margin-top:0">Заявки на гарантию</h3>
+  {% if requests %}
+  <table>
+    {% for r in requests %}
+    <tr><td style="width:auto">№ {{ r.purchase_number }}<div class="muted">{{ (r.subject or '')[:120] }}</div></td>
+      <td>{{ r.product }}{% if r.amount %}<div class="muted">{{ money(r.amount) }}</div>{% endif %}</td>
+      <td class="muted">{{ r.created_at.strftime("%d.%m.%Y") }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Заявок пока нет.</p>{% endif %}
+</div>
+{% endblock %}

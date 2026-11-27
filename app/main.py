@@ -7,13 +7,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, web
+from . import api, tenders_web, web
 from .captcha import CaptchaBroker, MemoryCaptchaBroker, RedisCaptchaBroker
 from .checks import CheckRunner
 from .config import Settings, settings as default_settings
@@ -23,8 +24,19 @@ from .sources import Source
 
 
 def default_sources() -> list[Source]:
+    from .sources.accblock import AccountBlocksSource
+    from .sources.bankrot import BankruptcySource
     from .sources.fns import FnsSource
-    return [FnsSource()]
+    from .sources.fns_opendata import DisqualifiedSource, TaxOffenceSource
+    from .sources.koap1928 import Koap1928Source
+    sources: list[Source] = []
+    if os.environ.get("DADATA_API_KEY"):
+        from .sources.dadata import DaDataSource
+        sources.append(DaDataSource())  # основной источник карточки, идёт первым
+    if os.environ.get("PBNALOG_MODE", "always").strip().lower() != "off":
+        sources.append(FnsSource())
+    return [*sources, AccountBlocksSource(), BankruptcySource(), Koap1928Source(),
+            DisqualifiedSource(), TaxOffenceSource()]
 
 
 def create_app(settings: Settings | None = None, sources: list[Source] | None = None,
@@ -77,6 +89,7 @@ def create_app(settings: Settings | None = None, sources: list[Source] | None = 
                        same_site="lax", https_only=settings.cookie_secure)
     app.include_router(api.router)
     app.include_router(web.router)
+    app.include_router(tenders_web.router)
 
     @app.exception_handler(LoginRequired)
     async def to_login(request: Request, exc: LoginRequired):

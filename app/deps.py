@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, Header, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,7 +76,9 @@ async def own_check(check_id: int, user: User, db: AsyncSession) -> Check:
 async def answer_captcha(request: Request, db: AsyncSession, check: Check, answer: str) -> bool:
     if not await request.app.state.captcha.answer(check.id, answer.strip()):
         return False
-    # Сразу снимаем статус, чтобы страница не показала старую капчу ещё раз.
-    check.status = CheckStatus.RUNNING
+    # Сразу снимаем статус, чтобы страница не показала старую капчу ещё раз. Только если
+    # проверка всё ещё ждёт капчу: иначе можно затереть уже записанный воркером DONE.
+    await db.execute(update(Check).where(Check.id == check.id, Check.status == CheckStatus.CAPTCHA)
+                     .values(status=CheckStatus.RUNNING))
     await db.commit()
     return True
