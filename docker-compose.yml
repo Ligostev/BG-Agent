@@ -4,6 +4,7 @@ services:
     build: .
     env_file: .env
     depends_on: [db, redis]
+    volumes: [appdata:/srv/data]   # наборы открытых данных ФНС и копия реестра 19.28
     restart: unless-stopped
 
   worker:
@@ -11,6 +12,7 @@ services:
     command: ["arq", "app.worker.WorkerSettings"]
     env_file: .env
     depends_on: [db, redis]
+    volumes: [appdata:/srv/data]
     restart: unless-stopped
 
   db:
@@ -38,5 +40,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  appdata:
   pgdata:
   caddy_data:
