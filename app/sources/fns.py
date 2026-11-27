@@ -11,12 +11,17 @@ DaData нет (на бесплатном тарифе — учредители �
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
+import logging
 import os
 
-from pbnalog import NotFound, PbNalogClient
+import httpx
+
+from pbnalog import CaptchaRequired, NotFound, PbNalogClient
 from pbnalog.summary import FIELDS, kind_title, pick, summarize
 
+from ..captcha import CaptchaTimeout
 from . import AskCaptcha, SourceContext, SourceData
 
 # Клиент общий на все проверки (одна сессия и общий лимит запросов к сайту),
@@ -29,6 +34,19 @@ async def _solver(image: bytes) -> str:
 
 
 MODES = ("always", "fallback", "off")
+log = logging.getLogger(__name__)
+
+
+def _reason(e: Exception) -> str:
+    if isinstance(e, CaptchaTimeout):
+        return "капчу не ввели вовремя"
+    if isinstance(e, CaptchaRequired):
+        return "сайт просит капчу"
+    if isinstance(e, (TimeoutError, httpx.TimeoutException)):
+        return "нет ответа"
+    if isinstance(e, httpx.HTTPError):
+        return "сайт недоступен"
+    return "ошибка сайта"
 
 
 class FnsSource:
@@ -52,6 +70,18 @@ class FnsSource:
             result = await self.client.lookup(ctx.query)
         except NotFound:
             return SourceData(found=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            if not primary:
+                raise  # карточки нет ни откуда — это настоящая ошибка
+            # DaData уже ответила: отказ сайта ФНС (капча без ответа, блокировка,
+            # таймаут) не ошибка проверки, а пометка, что дополнения нет.
+            log.warning("pb.nalog.ru не ответил, карточка из DaData: %s: %s", type(e).__name__, e)
+            reason = _reason(e)
+            return SourceData(found=True, summary=[
+                ("Внимание", f"pb.nalog.ru не ответил ({reason}). Карточка показана по данным DaData"),
+            ], data={"unavailable": True, "error": f"{type(e).__name__}: {e}"})
         merged = {**result.get("card", {}), **result["hit"]}
         identity = {"kind": result["kind"]}
         for key, (_, fields) in zip(("title", "inn", "ogrn"), FIELDS[:3]):

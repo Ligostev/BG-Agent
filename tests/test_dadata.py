@@ -284,3 +284,54 @@ def test_cabinet_dadata_first_and_skipped_source(tmp_path):
         assert data["title"] == "ООО \"РОМАШКА\"" and data["ogrn"] == OGRN
         page = c.get(f"/checks/{check_id}").text
         assert "Карточка компании (DaData)" in page and "Ликвидируется" in page
+
+
+class _FailingClient(_NoCallClient):
+    def __init__(self, exc):
+        self.exc = exc
+
+    async def lookup(self, query):
+        raise self.exc
+
+
+def test_fns_failure_is_soft_when_dadata_answered():
+    import httpx as _httpx
+    from app.captcha import CaptchaTimeout
+
+    dd = SourceData(found=True, summary=[("ИНН", SUBJ)], identity={"inn": SUBJ})
+    ctx = SourceContext(query=SUBJ, ask_captcha=None, previous={"dadata": dd})
+    for exc, reason in ((CaptchaTimeout(), "капчу не ввели вовремя"),
+                        (_httpx.ConnectError("refused"), "сайт недоступен"),
+                        (RuntimeError("неожиданный ответ"), "ошибка сайта")):
+        data = run(FnsSource(_FailingClient(exc)).fetch(ctx))
+        assert data.found and data.data["unavailable"]
+        assert reason in data.summary[0][1] and "DaData" in data.summary[0][1]
+        assert data.identity == {}  # не перебивает название и ИНН из DaData
+        assert related_parties(SourceContext(query=SUBJ, ask_captcha=None,
+                                             previous={"dadata": dd, "fns": data})) == []
+
+    # DaData не ответила: отказ pb.nalog.ru остаётся ошибкой источника
+    with pytest.raises(RuntimeError):
+        run(FnsSource(_FailingClient(RuntimeError("x"))).fetch(
+            SourceContext(query=SUBJ, ask_captcha=None)))
+
+
+def test_cabinet_done_with_dadata_when_pbnalog_refuses(tmp_path):
+    from tests.test_app import make_client as make_app, register, wait_status
+    from tests.test_bankrot import FakeFedresurs, make_client as fed_client
+
+    dadata = DaDataSource(make_client(FakeDaData({SUBJ: FULL})))
+    fns = FnsSource(_FailingClient(RuntimeError("403 Forbidden")))
+    bankrot = BankruptcySource(fed_client(FakeFedresurs()))
+    with make_app(tmp_path, [dadata, fns, bankrot]) as c:
+        register(c)
+        r = c.post("/checks", data={"query": SUBJ})
+        check_id = int(r.url.path.rsplit("/", 1)[1])
+        data = wait_status(c, check_id, {"done", "error"})
+        assert data["status"] == "done" and data["title"] == "ООО \"РОМАШКА\""
+        assert [(x["source"], x["status"]) for x in data["results"]] == [
+            ("dadata", "found"), ("fns", "found"), ("bankrot", "found")]
+        page = c.get(f"/checks/{check_id}").text
+        assert "pb.nalog.ru не ответил" in page and "Источник ответил ошибкой" not in page
+        related = c.get(f"/api/checks/{check_id}/data/bankrot").json()["related"]
+        assert {r["inn"] for r in related} == {DIR, FOUNDER}  # связанные лица из DaData
