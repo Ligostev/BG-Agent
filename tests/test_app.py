@@ -51,7 +51,7 @@ def wait_status(client, check_id, statuses, headers=None):
 
 
 def register(client, email="a@example.com"):
-    r = client.post("/register", data={"email": email, "password": "password1"})
+    r = client.post("/register", data={"email": email, "password": "password1", "pd": "1"})
     assert r.status_code == 200 and r.url.path == "/checks"
 
 

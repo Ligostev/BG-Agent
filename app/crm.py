@@ -25,13 +25,17 @@ def log(db: AsyncSession, client_id: int, author: User | None, text: str, *,
                     kind=kind, text=text))
 
 
-def set_stage(db: AsyncSession, deal: Deal, stage: str, author: User | None) -> bool:
+async def set_stage(db: AsyncSession, deal: Deal, stage: str, author: User | None) -> bool:
     if stage not in DealStage.TITLES or stage == deal.stage:
         return False
     old = deal.stage_title
     deal.stage = stage
     deal.closed_at = utcnow() if stage in DealStage.CLOSED else None
     log(db, deal.client_id, author, f"Сделка №{deal.id}: этап «{old}» → «{deal.stage_title}»", deal_id=deal.id)
+    from .outreach import notify_stage
+    if await notify_stage(db, deal):
+        log(db, deal.client_id, None, f"Сделка №{deal.id}: клиенту отправлено уведомление «{deal.stage_title}»",
+            deal_id=deal.id)
     return True
 
 

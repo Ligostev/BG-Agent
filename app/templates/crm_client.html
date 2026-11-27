@@ -72,6 +72,28 @@
   </form>
 </div>
 
+<div class="card" id="consents">
+  <h3 style="margin-top:0">Согласия на рекламу и обработку данных</h3>
+  {% if consents %}
+  <table>
+    {% for c in consents %}
+    <tr><td style="width:auto">{{ 'Реклама' if c.kind == 'ads' else 'Персональные данные' }} · {{ c.channel }} · {{ c.address }}
+        <div class="muted">{{ c.source }}{% if c.ip %} · IP {{ c.ip }}{% endif %}</div></td>
+      <td class="muted">с {{ c.given_at | msk('%d.%m.%Y %H:%M') }}{% if c.revoked_at %}<br><span class="r-error">отозвано {{ c.revoked_at | msk('%d.%m.%Y') }}</span>{% endif %}</td>
+      <td style="width:1%">{% if c.active and c.kind == 'ads' %}<form method="post" action="/crm/clients/{{ client.id }}/consents/{{ c.id }}/revoke">
+        <button class="link" type="submit">отозвать</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Согласий нет: рекламу этому клиенту отправлять нельзя.</p>{% endif %}
+  <form method="post" action="/crm/clients/{{ client.id }}/consents" class="row" style="margin-top:10px">
+    <select name="channel" style="flex:0"><option value="email">Email</option><option value="telegram">Telegram (chat id)</option><option value="sms">SMS</option></select>
+    <input type="text" name="address" placeholder="Адрес или телефон" required>
+    <input type="text" name="source" placeholder="Где получено: подписанная анкета от 01.12.2026, письмо…" required style="flex:2">
+    <button type="submit" style="flex:0">Внести согласие</button>
+  </form>
+  <p class="muted" style="margin:6px 0 0">Вносите только согласие, которое сможете показать: подписанную форму или письмо клиента.</p>
+</div>
+
 <div class="card" id="checks">
   <h3 style="margin-top:0">Проверки</h3>
   {% if checks %}

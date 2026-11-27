@@ -34,7 +34,8 @@ async def create_tables(engine: AsyncEngine) -> None:
 
 # Колонки, добавленные в уже существующие таблицы: create_all их не создаёт.
 _NEW_COLUMNS = {
-    "users": {"role": "VARCHAR(16) NOT NULL DEFAULT 'client'", "telegram_code": "VARCHAR(32)"},
+    "users": {"role": "VARCHAR(16) NOT NULL DEFAULT 'client'", "telegram_code": "VARCHAR(32)",
+              "notify": "BOOLEAN NOT NULL DEFAULT 1"},
     "clients": {"manager_id": "INTEGER REFERENCES users(id)"},
     "deals": {"expires_at": "DATE"},
 }

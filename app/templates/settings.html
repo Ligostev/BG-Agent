@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<div class="card">
+  <h3 style="margin-top:0">Уведомления по моим заявкам</h3>
+  <p class="muted">Когда заявку отправят в банки, одобрят или выдадут гарантию, мы сообщим
+    {{ 'в Telegram' if user.telegram_id else 'на ' ~ (user.email or 'email') }}.</p>
+  <form method="post" action="/settings/notify">
+    {% if user.notify %}<button type="submit" class="link">Выключить уведомления</button>
+    {% else %}<input type="hidden" name="on" value="1"><button type="submit">Включить уведомления</button>{% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Предложения и новости</h3>
+  <p class="muted">Рекламные сообщения приходят только по каналам, где вы их включили.
+    <a href="/legal/ads">Текст согласия</a>.</p>
+  {% if channels %}
+  <table>
+    {% for channel, title, address, consent in channels %}
+    <tr><td>{{ title }}<div class="muted">{{ address }}</div></td>
+      <td>{% if consent %}включено с {{ consent.given_at | msk('%d.%m.%Y') }}{% else %}<span class="muted">выключено</span>{% endif %}</td>
+      <td style="width:1%; white-space:nowrap"><form method="post" action="/settings/ads/{{ channel }}">
+        {% if consent %}<button type="submit" class="link">Отказаться</button>
+        {% else %}<input type="hidden" name="on" value="1"><button type="submit">Получать</button>{% endif %}
+      </form></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<div class="card" id="telegram">
+  <h3 style="margin-top:0">Telegram</h3>
+  {% if not bot_ready %}<p class="muted">Бот на сервере пока не настроен.</p>{% endif %}
+  {% if user.telegram_id %}<p>Telegram подключён.</p>{% endif %}
+  {% if user.telegram_code %}
+    {% if bot_username %}<p>Откройте ссылку и нажмите «Старт»:
+      <a href="https://t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}" target="_blank" rel="noopener">t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}</a></p>
+    {% else %}<p>Отправьте боту сообщение: <code>/start link_{{ user.telegram_code }}</code></p>{% endif %}
+  {% else %}
+  <form method="post" action="/telegram/link"><input type="hidden" name="back" value="/settings">
+    <button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
+  {% endif %}
+</div>
+{% endblock %}

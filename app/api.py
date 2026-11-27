@@ -113,3 +113,17 @@ async def telegram_link(body: TelegramLinkIn, request: Request, db: AsyncSession
     user.telegram_code = None
     await db.commit()
     return {"ok": True, "email": user.email, "staff": user.is_staff}
+
+
+@router.post("/telegram/stop")
+async def telegram_stop(request: Request, db: AsyncSession = Depends(get_db),
+                        x_bot_token: str | None = Header(default=None),
+                        x_telegram_id: int | None = Header(default=None)) -> dict:
+    """Команда /stop в боте: отзыв согласия на рекламу в Telegram."""
+    from .outreach import revoke_address
+    token = request.app.state.settings.bot_api_token
+    if not token or x_bot_token != token or not x_telegram_id:
+        raise HTTPException(401, "Нужен токен бота")
+    n = await revoke_address(db, "ads", "telegram", str(x_telegram_id), "Команда /stop в Telegram-боте")
+    await db.commit()
+    return {"ok": True, "revoked": n}

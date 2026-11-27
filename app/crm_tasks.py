@@ -1,4 +1,4 @@
-"""Задачи сотрудников и напоминания в Telegram.
+"""Задачи сотрудников, напоминания в Telegram и отправка очереди сообщений (уведомления, рассылки).
 
 Раз в несколько минут: python -m app.crm_tasks (на сервере это делает таймер systemd или воркер arq).
 Заводит задачи «гарантия истекает» и отправляет напоминания по наступившим задачам.
@@ -147,8 +147,11 @@ async def main() -> None:
 
         async def close() -> None:
             pass
+    from .outreach import Mailer, deliver
+    sm = make_sessionmaker(engine)
     try:
-        print(await send_reminders(make_sessionmaker(engine), send, settings.public_url))
+        print(await send_reminders(sm, send, settings.public_url))
+        print(await deliver(sm, telegram=send, mailer=Mailer(settings), public_url=settings.public_url))
     finally:
         await close()
         await engine.dispose()

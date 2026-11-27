@@ -52,9 +52,9 @@
 <body>
   <header><div class="wrap{{ self.wrapclass() }}">
     <nav><a class="brand" href="/">Проверка контрагентов</a>
-      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · <a href="/crm/reports">Аналитика</a> · {% if user.role == "admin" %}<a href="/crm/staff">Сотрудники</a> · {% endif %}{% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
+      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · <a href="/crm/reports">Аналитика</a> · {% if user.role == "admin" %}<a href="/crm/campaigns">Рассылки</a> · <a href="/crm/staff">Сотрудники</a> · {% endif %}{% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
     {% if user %}
-      <form method="post" action="/logout"><span class="muted">{{ user.email }}</span>
+      <form method="post" action="/logout"><a class="muted" href="/settings">{{ user.email or 'Настройки' }}</a>
         <button class="link" type="submit">Выйти</button></form>
     {% endif %}
   </div></header>

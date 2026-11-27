@@ -54,20 +54,34 @@ async def register_form(request: Request):
 
 
 @router.post("/register")
-async def register(request: Request, email: str = Form(), password: str = Form(),
-                   db: AsyncSession = Depends(get_db)):
+async def register(request: Request, email: str = Form(), password: str = Form(), pd: str = Form(""),
+                   ads: str = Form(""), db: AsyncSession = Depends(get_db)):
     email = email.strip().lower()
     if "@" not in email or len(password) < 8:
         return render(request, "register.html", 400, email=email,
                       error="Укажите email и пароль не короче 8 символов")
+    if not pd:
+        return render(request, "register.html", 400, email=email,
+                      error="Без согласия на обработку персональных данных зарегистрироваться нельзя")
     user = User(email=email, password_hash=hash_password(password))
     apply_admin_role(request, user)
     db.add(user)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
+        await db.rollback()
         return render(request, "register.html", 400, email=email,
                       error="Пользователь с таким email уже есть")
+    from .outreach import give_consent
+    settings = request.app.state.settings
+    meta = dict(user=user, ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"))
+    await give_consent(db, settings, kind="pd", channel="email", address=email,
+                       source="Регистрация в кабинете: отметка «Согласен на обработку персональных данных»", **meta)
+    if ads:
+        await give_consent(db, settings, kind="ads", channel="email", address=email,
+                           source="Регистрация в кабинете: отметка «Согласен получать рекламу по email»", **meta)
+    await db.commit()
     request.session["uid"] = user.id
     return go(home(user))
 

@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import api, crm_web, tenders_web, web
+from . import account_web, api, crm_web, tenders_web, web
 from .captcha import CaptchaBroker, MemoryCaptchaBroker, RedisCaptchaBroker
 from .checks import CheckRunner
 from .config import Settings, settings as default_settings
@@ -91,6 +91,7 @@ def create_app(settings: Settings | None = None, sources: list[Source] | None = 
     app.include_router(web.router)
     app.include_router(tenders_web.router)
     app.include_router(crm_web.router)
+    app.include_router(account_web.router)
 
     @app.exception_handler(LoginRequired)
     async def to_login(request: Request, exc: LoginRequired):

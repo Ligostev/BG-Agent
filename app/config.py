@@ -32,6 +32,16 @@ class Settings:
     # Адрес кабинета для ссылок в напоминаниях; по умолчанию https://<DOMAIN>.
     public_url: str = field(default_factory=lambda: (os.environ.get("PUBLIC_URL") or (
         f"https://{os.environ['DOMAIN']}" if os.environ.get("DOMAIN") else "")).rstrip("/"))
+    # Почта для уведомлений и рассылок: SMTP российского сервиса (Unisender, Dashamail, Яндекс 360…).
+    smtp_host: str = field(default_factory=lambda: os.environ.get("SMTP_HOST", ""))
+    smtp_port: int = field(default_factory=lambda: int(os.environ.get("SMTP_PORT", "465")))
+    smtp_user: str = field(default_factory=lambda: os.environ.get("SMTP_USER", ""))
+    smtp_password: str = field(default_factory=lambda: os.environ.get("SMTP_PASSWORD", ""))
+    smtp_from: str = field(default_factory=lambda: os.environ.get("SMTP_FROM", ""))
+    # Оператор персональных данных и рекламодатель: подставляются в тексты согласий и в пометку «Реклама».
+    operator_name: str = field(default_factory=lambda: os.environ.get("OPERATOR_NAME", ""))
+    operator_inn: str = field(default_factory=lambda: os.environ.get("OPERATOR_INN", ""))
+    operator_address: str = field(default_factory=lambda: os.environ.get("OPERATOR_ADDRESS", ""))
 
 
 settings = Settings()

@@ -7,6 +7,13 @@
   <input id="email" type="email" name="email" value="{{ email or '' }}" required autofocus>
   <label for="password">Пароль (не короче 8 символов)</label>
   <input id="password" type="password" name="password" minlength="8" required>
+  <label style="display:flex; gap:8px; align-items:flex-start; margin-top:14px">
+    <input type="checkbox" name="pd" value="1" required style="margin-top:4px">
+    <span>Даю <a href="/legal/pd" target="_blank">согласие на обработку персональных данных</a></span></label>
+  <label style="display:flex; gap:8px; align-items:flex-start">
+    <input type="checkbox" name="ads" value="1" style="margin-top:4px">
+    <span>Хочу получать по email предложения по гарантиям и новости сервиса
+      (<a href="/legal/ads" target="_blank">согласие на рекламу</a>, можно отказаться в любой момент). Необязательно.</span></label>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <button type="submit">Создать аккаунт</button>
   <p class="muted">Уже есть аккаунт? <a href="/login">Войдите</a></p>
