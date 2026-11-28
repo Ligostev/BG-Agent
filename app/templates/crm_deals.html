@@ -2,41 +2,44 @@
 {% block title %}Сделки{% endblock %}
 {% block wrapclass %} wide{% endblock %}
 {% block content %}
-<div class="card">
-  <form method="get" action="/crm/deals" class="row">
-    <input type="text" name="q" value="{{ q }}" placeholder="Клиент, ИНН, № закупки или предмет">
-    {% if stage %}<input type="hidden" name="stage" value="{{ stage }}">{% endif %}
-    <button type="submit">Найти</button>
-  </form>
-  <div class="tabs" style="margin-top:12px">
-    <a href="/crm/deals" class="{{ 'on' if not stage }}">В работе: {{ open_count }}</a>
-    {% for key, title in stages.items() %}
-      <a href="/crm/deals?stage={{ key }}" class="{{ 'on' if stage == key }}">{{ title }}: {{ counts.get(key, 0) }}</a>
-    {% endfor %}
-  </div>
-  <p class="muted" style="margin:6px 0 0">Показано сделок: {{ total }} · сумма гарантий {{ money(pipeline) }}.
-    Новую сделку заводите из <a href="/crm/clients">карточки клиента</a>.
-    <a href="/crm/deals.xlsx">Скачать все сделки в Excel</a> · <a href="/crm/reports">Аналитика</a></p>
-</div>
+<div class="page-head"><div><h1>Сделки</h1>
+  <p>Показано {{ total }} · сумма гарантий {{ money(pipeline) }}</p></div>
+  <div class="actions"><a class="btn secondary small" href="/crm/deals.xlsx">Excel</a>
+    <a class="btn secondary small" href="/crm/reports">Аналитика</a>
+    <a class="btn small" href="/crm/clients">Новая сделка</a></div></div>
 
 <div class="card">
-{% for key, deals in board.items() %}
-  <div class="stage">{{ stages[key] }} <span class="muted">· {{ deals | length }}</span></div>
-  {% if deals %}
-  <table>
-    {% for d in deals %}
-    <tr>
-      <td style="width:auto"><a href="/crm/deals/{{ d.id }}">№{{ d.id }} · {{ d.product }}</a>
-        <div class="muted">{% if d.purchase_number %}закупка № {{ d.purchase_number }} · {% endif %}{{ (d.subject or '')[:120] }}</div></td>
-      <td style="width:28%"><a href="/crm/clients/{{ d.client.id }}">{{ client_title(d.client) }}</a>
-        {% if d.client.inn %}<div class="muted">ИНН {{ d.client.inn }}</div>{% endif %}</td>
-      <td style="width:14%">{{ money(d.amount) }}</td>
-      <td style="width:18%" class="muted">{% for b in d.banks %}{{ b.bank }}: {{ b.status_title }}{% if not loop.last %}<br>{% endif %}{% else %}банков нет{% endfor %}</td>
-      <td style="width:10%" class="muted">{{ d.updated_at | msk("%d.%m") }}</td>
-    </tr>
+  <form method="get" action="/crm/deals" class="row">
+    <input type="search" name="q" value="{{ q }}" placeholder="Клиент, ИНН, № закупки или предмет">
+    {% if stage %}<input type="hidden" name="stage" value="{{ stage }}">{% endif %}
+    <button type="submit" class="dark">Найти</button>
+  </form>
+  <div class="tabs scroll" style="margin-top:14px">
+    <a href="/crm/deals" class="{{ 'on' if not stage }}">В работе <span class="count">{{ open_count }}</span></a>
+    {% for key, title in stages.items() %}
+      <a href="/crm/deals?stage={{ key }}" class="{{ 'on' if stage == key }}">{{ title }} <span class="count">{{ counts.get(key, 0) }}</span></a>
     {% endfor %}
-  </table>
-  {% else %}<p class="muted">Пусто.</p>{% endif %}
+  </div>
+  <p class="muted small" style="margin:10px 0 0">Новую сделку заводите из карточки клиента.</p>
+</div>
+
+<div class="board">
+{% for key, deals in board.items() %}
+  <section class="column">
+    <div class="column-head"><span>{{ stages[key] }}</span><span class="count">{{ deals | length }}</span></div>
+    {% for d in deals %}
+    <article class="deal">
+      <a href="/crm/deals/{{ d.id }}">№{{ d.id }} · {{ d.product }}</a>
+      <div class="amount">{{ money(d.amount) }}</div>
+      {% if d.purchase_number or d.subject %}<div class="meta">{% if d.purchase_number %}закупка № {{ d.purchase_number }} · {% endif %}{{ (d.subject or '')[:90] }}</div>{% endif %}
+      <div class="client"><a href="/crm/clients/{{ d.client.id }}">{{ client_title(d.client) }}</a>
+        {% if d.client.inn %}<span class="muted small">· ИНН {{ d.client.inn }}</span>{% endif %}</div>
+      <div class="meta" style="margin-top:6px">{% for b in d.banks %}{{ b.bank }}: {{ b.status_title }}{% if not loop.last %}<br>{% endif %}{% else %}банков нет{% endfor %}
+        · {{ d.updated_at | msk("%d.%m") }}</div>
+    </article>
+    {% else %}<div class="empty">Пусто</div>
+    {% endfor %}
+  </section>
 {% endfor %}
 </div>
 {% endblock %}

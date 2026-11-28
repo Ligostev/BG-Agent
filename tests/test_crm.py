@@ -250,9 +250,9 @@ def test_reports_and_excel(tmp_path):
         c.post("/crm/deals/3", data={"stage": "lost", "product": "БГ на исполнение контракта"})
 
         page = c.get("/crm/reports").text
-        assert "Новых сделок</th><td>3" in page
-        assert "<b>1</b> на 1 000 000 ₽" in page and "<b>8 000 ₽</b>" in page
-        assert "Доля выдач среди закрытых</th><td>50%" in page
+        assert 'Новых сделок</div><div class="value">3<' in page
+        assert "выдано 1 на 1 000 000 ₽" in page and '<div class="value">8 000 ₽</div>' in page
+        assert 'Доля выдач среди закрытых</div><div class="value">50%' in page
         assert "Реклама" in page and "Рекомендация" in page and "ВТБ" in page and "20 000 ₽" in page
         assert c.get("/crm/reports?period=year").status_code == 200
 

@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Подбор закупок{% endblock %}
 {% block content %}
+<div class="page-head"><div><h1>Подбор закупок</h1>
+  <p>Закупки по 44-ФЗ, 223-ФЗ и 615-ПП под ваш профиль. Новые подгружаются каждое утро.</p></div>
+  {% if requests %}<div class="actions"><a class="btn secondary" href="#requests">Мои заявки · {{ requests | length }}</a></div>{% endif %}</div>
 {% if not eis_ready %}
-<div class="card"><b>Загрузка из ЕИС не настроена.</b>
+<div class="card notice"><b>Загрузка из ЕИС не настроена.</b>
   <span class="muted">Добавьте EIS_TOKEN в настройки сервера, тогда каждое утро будут подгружаться новые закупки.</span></div>
 {% endif %}
 {% if error %}<div class="card error">{{ error }}</div>{% endif %}
-{% if notice %}<div class="card">{{ notice }}</div>{% endif %}
+{% if notice %}<div class="card notice">{{ notice }}</div>{% endif %}
 
-<div class="card">
-  <h3 style="margin-top:0">Что вы поставляете</h3>
+<details class="card fold" {{ 'open' if not (profile.okpd2 or profile.keywords or profile.description) }}>
+  <summary><h3>Что вы поставляете</h3><span class="muted small hide-phone">{{ 'изменить профиль' if (profile.okpd2 or profile.keywords or profile.description) }}</span></summary>
   <form method="post" action="/tenders/profile" class="grid">
     <label>Коды ОКПД2 <span class="muted">(через запятую, можно начало кода: 43, 43.21, 41.20.40)</span>
       <input type="text" name="okpd2" value="{{ profile.okpd2 | join(', ') }}"></label>
@@ -17,8 +20,7 @@
       <input type="text" name="regions" value="{{ profile.regions | join(', ') }}"></label>
     <label>Что вы делаете, своими словами <span class="muted">(подбор по смыслу: найдутся закупки
       с похожим предметом, даже если слова другие)</span>
-      <textarea name="description" rows="2" style="width:100%; padding:10px 12px; border:1px solid var(--line);
-        border-radius:8px; font:inherit">{{ profile.description or '' }}</textarea>
+      <textarea name="description" rows="2">{{ profile.description or '' }}</textarea>
       {% if semantic == "off" %}<span class="muted">Подбор по смыслу на сервере пока не включён.</span>
       {% elif semantic == "pending" and profile.description %}<span class="muted">Описание учтём в течение 15 минут.</span>{% endif %}
     </label>
@@ -26,10 +28,10 @@
       «кровля» найдёт и «кровельные работы», и «ремонт крыши»; «асфальт|щебень» — любое из слов;
       «-проект» — исключить закупки с этим словом)</span>
       <input type="text" name="keywords" value="{{ profile.keywords | join(', ') }}"></label>
-    <div style="margin-bottom:10px">Законы:
+    <div class="row" style="gap:18px; align-items:center"><b class="small">Законы:</b>
       {% set chosen = profile.laws if profile.laws is not none else laws %}
       {% for law in laws %}
-        <label style="display:inline; margin-right:12px"><input type="checkbox" name="laws" value="{{ law }}"
+        <label style="flex:0 0 auto"><input type="checkbox" name="laws" value="{{ law }}"
           {% if law in chosen %}checked{% endif %}> {{ law }}</label>
       {% endfor %}
     </div>
@@ -44,35 +46,34 @@
     <div><button type="submit">Сохранить</button></div>
   </form>
   <form method="post" action="/tenders/profile/import" enctype="multipart/form-data" style="margin-top:14px">
-    <span class="muted">Или заполните по своим прошлым контрактам: ЕИС → «Реестр контрактов» → ИНН поставщика → «Выгрузить», файл .xlsx или .csv.</span>
+    <hr><span class="muted small">Или заполните по своим прошлым контрактам: ЕИС → «Реестр контрактов» → ИНН поставщика → «Выгрузить», файл .xlsx или .csv.</span>
     <div class="row" style="margin-top:6px"><input type="file" name="file" accept=".xlsx,.csv" required>
-      <button type="submit">Загрузить</button></div>
+      <button type="submit" class="secondary">Загрузить</button></div>
   </form>
-</div>
+</details>
 
 <div class="card">
-  <h3 style="margin-top:0">Подходящие закупки</h3>
+  <div class="card-head"><h3>Подходящие закупки</h3>{% if matches %}<span class="muted small">{{ matches | length }}</span>{% endif %}</div>
   {% if matches %}
-  <table>
     {% for m in matches %}{% set n = m.notice %}
-    <tr>
-      <td style="width:auto">
-        <a href="{{ n.url or eis_url(n.purchase_number) }}" target="_blank" rel="noopener">№ {{ n.purchase_number }}</a>
-        <div>{{ n.subject }}</div>
-        <div class="muted">{{ n.law }} · {{ n.customer }}{% if n.placing_way %} · {{ n.placing_way }}{% endif %}</div>
-        <div class="muted">{{ m.reasons | join(' · ') }}</div>
-      </td>
-      <td style="width:30%">
-        <div><b>{{ money(n.max_price) }}</b></div>
+    <div class="match">
+      <div>
+        <a class="num-link" href="{{ n.url or eis_url(n.purchase_number) }}" target="_blank" rel="noopener">№ {{ n.purchase_number }}</a>
+        <span class="badge plain">{{ n.law }}</span>
+        <div class="subject">{{ n.subject }}</div>
+        <div class="muted small">{{ n.customer }}{% if n.placing_way %} · {{ n.placing_way }}{% endif %}</div>
+        {% if m.reasons %}<div class="chips">{% for reason in m.reasons %}<span class="chip">{{ reason }}</span>{% endfor %}</div>{% endif %}
+      </div>
+      <div class="side">
+        <div class="price">{{ money(n.max_price) }}</div>
         {% for product, amount in m.products %}
-          <div class="muted">{{ product }}{% if amount %}: {{ money(amount) }}{% endif %}</div>
+          <div class="muted small">{{ product }}{% if amount %}: {{ money(amount) }}{% endif %}</div>
         {% endfor %}
-        <form method="post" action="/tenders/{{ n.purchase_number }}/guarantee" style="margin-top:6px">
+        <form method="post" action="/tenders/{{ n.purchase_number }}/guarantee">
           <button type="submit">Нужна гарантия</button></form>
-      </td>
-    </tr>
+      </div>
+    </div>
     {% endfor %}
-  </table>
   {% elif profile.okpd2 or profile.keywords or profile.description %}
   <p class="muted">Пока ничего не нашлось. Новые закупки подгружаются каждое утро.</p>
   {% else %}
@@ -81,13 +82,13 @@
 </div>
 
 <div class="card" id="requests">
-  <h3 style="margin-top:0">Заявки на гарантию</h3>
+  <h3>Заявки на гарантию</h3>
   {% if requests %}
   <table>
     {% for r in requests %}
     <tr><td style="width:auto">№ {{ r.purchase_number }}<div class="muted">{{ (r.subject or '')[:120] }}</div></td>
       <td>{{ r.product }}{% if r.amount %}<div class="muted">{{ money(r.amount) }}</div>{% endif %}</td>
-      <td><span class="badge">{{ r.stage_title }}</span>
+      <td style="width:1%; white-space:nowrap"><span class="badge yellow">{{ r.stage_title }}</span>
         <div class="muted">{{ r.created_at.strftime("%d.%m.%Y") }}</div></td></tr>
     {% endfor %}
   </table>

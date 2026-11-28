@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import account_web, api, crm_web, tenders_web, web
@@ -87,6 +88,7 @@ def create_app(settings: Settings | None = None, sources: list[Source] | None = 
     app.add_middleware(SessionMiddleware, secret_key=settings.secret_key,
                        session_cookie="bg_session", max_age=30 * 24 * 3600,
                        same_site="lax", https_only=settings.cookie_secure)
+    app.mount("/static", StaticFiles(directory=web.STATIC_DIR), name="static")
     app.include_router(api.router)
     app.include_router(web.router)
     app.include_router(tenders_web.router)

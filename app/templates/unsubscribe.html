@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Отписка от рассылки{% endblock %}
 {% block content %}
-<div class="card narrow" style="max-width:520px; margin:40px auto">
+<div class="card" style="max-width:520px; margin:40px auto">
   {% if done %}
-  <h2 style="margin-top:0">Вы отписаны</h2>
+  <h2>Вы отписаны</h2>
   <p>Рекламные сообщения на {{ consent.address }} больше приходить не будут.
     Уведомления по вашим заявкам это не затрагивает.</p>
   {% else %}
-  <h2 style="margin-top:0">Отписаться от рассылки?</h2>
-  <p>Адрес: {{ consent.address }}</p>
+  <h2>Отписаться от рассылки?</h2>
+  <p>Адрес: <b>{{ consent.address }}</b></p>
   <form method="post" action="/u/{{ consent.token }}"><button type="submit">Отписаться</button></form>
   {% endif %}
 </div>

@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Вход{% endblock %}
 {% block content %}
-<form class="narrow card" method="post" action="/login">
-  <h2>Вход</h2>
-  <label for="email">Email</label>
-  <input id="email" type="email" name="email" value="{{ email or '' }}" required autofocus>
-  <label for="password">Пароль</label>
-  <input id="password" type="password" name="password" required>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <button type="submit">Войти</button>
-  <p class="muted">Нет аккаунта? <a href="/register">Зарегистрируйтесь</a></p>
-</form>
+<div class="auth">
+  {% include "_auth_promo.html" %}
+  <form class="auth-form" method="post" action="/login">
+    <h2>Вход</h2>
+    <label class="field" for="email">Email</label>
+    <input id="email" type="email" name="email" value="{{ email or '' }}" autocomplete="email" required autofocus>
+    <label class="field" for="password">Пароль</label>
+    <input id="password" type="password" name="password" autocomplete="current-password" required>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button type="submit">Войти</button>
+    <p class="switch">Нет аккаунта? <a href="/register">Зарегистрируйтесь</a></p>
+  </form>
+</div>
 {% endblock %}

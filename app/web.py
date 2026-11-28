@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -21,6 +22,10 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["status"] = format_status
 templates.env.globals["CheckStatus"] = CheckStatus
 templates.env.filters["msk"] = msk
+# Версия оформления для ссылок на /static: браузер берёт новый CSS и логотип сразу после обновления.
+STATIC_DIR = Path(__file__).parent / "static"
+templates.env.globals["asset_v"] = hashlib.md5(b"".join(
+    f.read_bytes() for f in sorted(STATIC_DIR.rglob("*")) if f.is_file())).hexdigest()[:8]
 
 router = APIRouter(include_in_schema=False)
 

@@ -1,63 +1,47 @@
+{%- macro nav_link(href, title) -%}
+<a href="{{ href }}"{% if request.url.path.startswith(href) %} class="on" aria-current="page"{% endif %}>{{ title }}</a>
+{%- endmacro -%}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Проверка контрагентов{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#575757">
+  <title>{% block title %}Кабинет{% endblock %} · TenFin</title>
+  {# Логотип и значок: замените файлы в app/static/brand/, шаблоны трогать не нужно. #}
+  <link rel="icon" href="/static/brand/favicon.svg?v={{ asset_v }}" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/tenfin.css?v={{ asset_v }}">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-  <style>
-    :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7280; --line:#e3e6eb;
-            --accent:#2453d6; --ok:#137a3a; --warn:#a15c00; --bad:#b42318; }
-    * { box-sizing: border-box; }
-    body { margin:0; font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-           background:var(--bg); color:var(--text); }
-    header { background:var(--card); border-bottom:1px solid var(--line); }
-    header .wrap { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .wrap { max-width:900px; margin:0 auto; padding:14px 16px; }
-    a { color:var(--accent); text-decoration:none; }
-    .brand { font-weight:600; color:var(--text); }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin:16px 0; }
-    input[type=text], input[type=email], input[type=password], input[type=datetime-local], input[type=date] {
-      width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; }
-    button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff;
-             font:inherit; cursor:pointer; }
-    button.link { background:none; color:var(--muted); padding:0; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; } .row input, .row label { flex:1; }
-    form.grid label { display:block; margin-bottom:10px; }
-    .error { color:var(--bad); margin:8px 0 0; }
-    .muted { color:var(--muted); }
-    table { width:100%; border-collapse:collapse; }
-    td, th { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
-    th { color:var(--muted); font-weight:500; width:35%; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:13px; background:var(--bg); }
-    .s-done, .r-found { color:var(--ok); } .s-error, .r-error { color:var(--bad); }
-    .s-captcha, .r-warn { color:var(--warn); }
-    .wrap.wide { max-width:1200px; }
-    input[type=text].sm, select, textarea { padding:8px 10px; border:1px solid var(--line); border-radius:8px;
-      font:inherit; background:#fff; }
-    textarea { width:100%; }
-    .tabs a { display:inline-block; margin:0 6px 6px 0; padding:4px 10px; border-radius:999px;
-              border:1px solid var(--line); background:var(--card); color:var(--text); }
-    .tabs a.on { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .stage { margin:18px 0 6px; font-weight:600; }
-    .log li { margin-bottom:8px; } .log .muted { font-size:13px; }
-    .bar { height:8px; background:var(--accent); border-radius:4px; min-width:2px; }
-    .num { text-align:right; white-space:nowrap; }
-    .k-call::before { content:"☎ "; }
-    form.narrow { max-width:380px; margin:40px auto; }
-    form.narrow label { display:block; margin:12px 0 4px; }
-    form.narrow button { margin-top:16px; width:100%; }
-  </style>
 </head>
 <body>
-  <header><div class="wrap{{ self.wrapclass() }}">
-    <nav><a class="brand" href="/">Проверка контрагентов</a>
-      {% if user %}&nbsp;·&nbsp;{% if user.is_staff %}<a href="/crm/deals">Сделки</a> · <a href="/crm/clients">Клиенты</a> · <a href="/crm/tasks">Задачи</a> · <a href="/crm/reports">Аналитика</a> · {% if user.role == "admin" %}<a href="/crm/campaigns">Рассылки</a> · <a href="/crm/staff">Сотрудники</a> · {% endif %}{% endif %}<a href="/checks">Проверки</a> · <a href="/tenders">Закупки</a>{% endif %}</nav>
+  <header class="site-header"><div class="wrap{{ self.wrapclass() }}">
+    <a class="logo" href="/" aria-label="TenFin — на главную"><img src="/static/brand/logo.svg?v={{ asset_v }}" alt="TenFin" width="102" height="34"></a>
     {% if user %}
-      <form method="post" action="/logout"><a class="muted" href="/settings">{{ user.email or 'Настройки' }}</a>
-        <button class="link" type="submit">Выйти</button></form>
+    <input type="checkbox" id="menu-open" class="menu-check" hidden>
+    <label for="menu-open" class="menu-toggle">Меню</label>
+      <div class="menu-panel">
+        <nav class="nav">
+          {% if user.is_staff %}
+            <span class="nav-label">CRM</span>
+            {{ nav_link('/crm/deals', 'Сделки') }}{{ nav_link('/crm/clients', 'Клиенты') }}{{ nav_link('/crm/tasks', 'Задачи') }}{{ nav_link('/crm/reports', 'Аналитика') }}
+            {% if user.role == "admin" %}{{ nav_link('/crm/campaigns', 'Рассылки') }}{{ nav_link('/crm/staff', 'Сотрудники') }}{% endif %}
+            <span class="sep"></span>
+            <span class="nav-label">Кабинет</span>
+          {% endif %}
+          {{ nav_link('/checks', 'Проверки') }}{{ nav_link('/tenders', 'Закупки') }}{{ nav_link('/settings', 'Настройки') }}
+        </nav>
+        <form class="account" method="post" action="/logout">
+          <a href="/settings" title="{{ user.email or 'Настройки' }}">{{ user.email or 'Настройки' }}</a>
+          <button class="link" type="submit">Выйти</button>
+        </form>
+      </div>
     {% endif %}
   </div></header>
   <main class="wrap{% block wrapclass %}{% endblock %}">{% block content %}{% endblock %}</main>
+  <footer class="site-footer"><div class="wrap{{ self.wrapclass() }}">
+    <span>© TenFin · проверка компаний, закупки и банковские гарантии</span>
+    <span><a href="/legal/pd">Персональные данные</a> · <a href="/legal/ads">Согласие на рекламу</a></span>
+  </div></footer>
 </body>
 </html>
