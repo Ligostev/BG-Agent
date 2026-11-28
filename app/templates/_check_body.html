@@ -1,40 +1,62 @@
 {# Пока проверка не закончилась, фрагмент сам себя перезапрашивает раз в 2 секунды. #}
+{# Тон карточки источника: tone-bad — стоп-фактор, tone-warn — нужно внимание или источник не ответил, tone-ok — чисто. #}
+{% macro tone(r) -%}
+  {%- if r.status == "found" and r.data and (r.source == "bankrot" or r.data.verdict is defined) -%}
+    {{ 'tone-bad' if r.data.flagged else ('tone-warn' if r.data.unavailable else 'tone-ok') }}
+  {%- elif r.status == "error" -%}tone-warn{%- endif -%}
+{%- endmacro %}
+{% set n = namespace(bad=0, warn=0, ok=0) %}
+{% for r in check.results %}{% set t = tone(r) %}
+  {% if t == 'tone-bad' %}{% set n.bad = n.bad + 1 %}{% elif t == 'tone-warn' %}{% set n.warn = n.warn + 1 %}{% elif t == 'tone-ok' %}{% set n.ok = n.ok + 1 %}{% endif %}
+{% endfor %}
 <div {% if check.status not in CheckStatus.FINISHED and check.status != CheckStatus.CAPTCHA %}
      hx-get="/checks/{{ check.id }}/body" hx-trigger="every 2s" hx-target="#check-body"{% endif %}>
   <div class="card">
-    <h2 style="margin:0 0 4px">{{ check.title or check.query }}</h2>
-    <span class="badge s-{{ check.status }}">{{ check.status | status }}</span>
+    <div class="report-head">
+      <div>
+        <h2>{{ check.title or check.query }}</h2>
+        <div class="muted">{% if check.inn %}ИНН {{ check.inn }}{% else %}{{ check.query }}{% endif %}{% if check.ogrn %} · ОГРН {{ check.ogrn }}{% endif %}
+          · {{ check.created_at.strftime("%d.%m.%Y %H:%M") }}</div>
+      </div>
+      <span class="badge s-{{ check.status }}">{{ check.status | status }}</span>
+    </div>
     {% if check.error %}<p class="error">{{ check.error }}</p>{% endif %}
+    {% if check.results %}
+    <div class="tally">
+      <div class="pill tone-bad"><b>{{ n.bad }}</b><span>стоп-факторы</span></div>
+      <div class="pill tone-warn"><b>{{ n.warn }}</b><span>требуют внимания</span></div>
+      <div class="pill tone-ok"><b>{{ n.ok }}</b><span>чисто</span></div>
+    </div>
+    {% endif %}
   </div>
 
   {% if check.status == CheckStatus.CAPTCHA %}
-  <div class="card">
+  <div class="card captcha-card">
     <p><b>Сайт ФНС просит капчу.</b> Введите цифры с картинки.</p>
     <img src="/api/checks/{{ check.id }}/captcha?t={{ range(100000) | random }}" alt="капча" height="60">
-    <form class="row" method="post" action="/checks/{{ check.id }}/captcha" style="margin-top:8px">
+    <form class="row" method="post" action="/checks/{{ check.id }}/captcha" style="margin-top:10px">
       <input type="text" name="answer" inputmode="numeric" autocomplete="off" required autofocus>
-      <button type="submit">Отправить</button>
+      <button type="submit" class="dark">Отправить</button>
     </form>
   </div>
   {% endif %}
 
   {% for r in check.results %}
-  <div class="card">
-    <h3 style="margin-top:0">{{ sources.get(r.source, r.source) }}
-      {% if r.data %}<a class="muted" style="font-size:13px;font-weight:400"
-         href="/api/checks/{{ check.id }}/data/{{ r.source }}" target="_blank">JSON</a>{% endif %}</h3>
+  <div class="card source-card {{ tone(r) }}">
+    <div class="card-head"><h3>{{ sources.get(r.source, r.source) }}</h3>
+      {% if r.data %}<a href="/api/checks/{{ check.id }}/data/{{ r.source }}" target="_blank">JSON</a>{% endif %}</div>
     {% if r.status == "found" %}
       {% if r.source == "bankrot" and r.data %}
-        <p class="{{ 'r-error' if r.data.flagged else 'r-found' }}"><b>{{ 'Есть признаки банкротства' if r.data.flagged else 'Признаков банкротства не найдено' }}</b></p>
+        <p class="verdict {{ 'tone-bad' if r.data.flagged else 'tone-ok' }}">{{ 'Есть признаки банкротства' if r.data.flagged else 'Признаков банкротства не найдено' }}</p>
       {% endif %}
       {% if r.source != "bankrot" and r.data and r.data.verdict is defined %}
-        <p class="{{ 'r-error' if r.data.flagged else ('r-warn' if r.data.unavailable else 'r-found') }}"><b>{{ r.data.verdict }}</b></p>
+        <p class="verdict {{ 'tone-bad' if r.data.flagged else ('tone-warn' if r.data.unavailable else 'tone-ok') }}">{{ r.data.verdict }}</p>
       {% endif %}
       <table>{% for label, value in r.summary %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
     {% elif r.status == "not_found" %}
-      <p class="muted">Сведений не найдено.</p>
+      <p class="muted" style="margin:0">Сведений не найдено.</p>
     {% else %}
-      <p class="r-error">Источник ответил ошибкой: {{ r.error }}</p>
+      <p class="verdict tone-warn">Источник ответил ошибкой: {{ r.error }}</p>
     {% endif %}
   </div>
   {% endfor %}

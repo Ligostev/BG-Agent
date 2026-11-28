@@ -8,7 +8,7 @@
         · {{ t.assignee.email if t.assignee else 'любой сотрудник' }}</div></td>
     <td style="width:1%; white-space:nowrap">
       <form method="post" action="/crm/tasks/{{ t.id }}/done" style="display:inline">
-        <input type="hidden" name="back" value="{{ back }}"><button type="submit">Готово</button></form>
+        <input type="hidden" name="back" value="{{ back }}"><button type="submit" class="small secondary">Готово</button></form>
     </td>
   </tr>
   {% endfor %}
@@ -18,13 +18,13 @@
   <input type="hidden" name="back" value="{{ back }}">
   {% if client_id %}<input type="hidden" name="client_id" value="{{ client_id }}">{% endif %}
   {% if deal_id %}<input type="hidden" name="deal_id" value="{{ deal_id }}">{% endif %}
-  <input type="text" name="title" placeholder="Что сделать: перезвонить, запросить баланс…" required style="flex:3">
-  <input type="datetime-local" name="due" class="sm" style="flex:1">
-  <select name="assignee_id" style="flex:1">
+  <input type="text" name="title" placeholder="Что сделать: перезвонить, запросить баланс…" required class="grow3">
+  <input type="datetime-local" name="due" class="sm">
+  <select name="assignee_id">
     <option value="">{{ 'Ответственному' if client_id or deal_id else 'Любому' }}</option>
     <option value="me">Мне</option>
     {% for s in staff %}<option value="{{ s.id }}">{{ s.email }}</option>{% endfor %}
   </select>
-  <label style="flex:0; white-space:nowrap"><input type="checkbox" name="remind" value="1" checked> напомнить</label>
-  <button type="submit" style="flex:0">Добавить</button>
+  <label class="inline-check"><input type="checkbox" name="remind" value="1" checked> напомнить</label>
+  <button type="submit">Добавить</button>
 </form>

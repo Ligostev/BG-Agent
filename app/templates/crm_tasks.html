@@ -2,8 +2,9 @@
 {% block title %}Задачи{% endblock %}
 {% block wrapclass %} wide{% endblock %}
 {% block content %}
+<div class="page-head"><div><h1>Задачи</h1></div><div class="actions"><a class="btn small" href="#new-task">Новая задача</a></div></div>
 <div class="card">
-  {% if user.role == 'admin' %}<div class="tabs">
+  {% if user.role == 'admin' %}<div class="tabs" style="margin-bottom:6px">
     <a href="/crm/tasks" class="{{ 'on' if who != 'all' }}">Мои и общие</a>
     <a href="/crm/tasks?who=all" class="{{ 'on' if who == 'all' }}">Все сотрудники</a>
   </div>{% endif %}
@@ -25,7 +26,7 @@
           <input type="hidden" name="days" value="1"><input type="hidden" name="back" value="/crm/tasks?who={{ who }}">
           <button class="link" type="submit">+1 день</button></form>&nbsp;{% endif %}
         <form method="post" action="/crm/tasks/{{ t.id }}/done" style="display:inline">
-          <input type="hidden" name="back" value="/crm/tasks?who={{ who }}"><button type="submit">Готово</button></form>
+          <input type="hidden" name="back" value="/crm/tasks?who={{ who }}"><button type="submit" class="small">Готово</button></form>
       </td>
     </tr>
     {% endfor %}
@@ -34,28 +35,28 @@
   {% endif %}{% endfor %}
 </div>
 
-<div class="card">
-  <h3 style="margin-top:0">Новая задача</h3>
+<div class="card" id="new-task">
+  <h3>Новая задача</h3>
   <form method="post" action="/crm/tasks" class="grid">
     <input type="hidden" name="back" value="/crm/tasks?who={{ who }}">
     <div class="row">
-      <input type="text" name="title" placeholder="Что сделать" required style="flex:3">
-      <input type="datetime-local" name="due" class="sm" style="flex:1">
+      <input type="text" name="title" placeholder="Что сделать" required class="grow3">
+      <input type="datetime-local" name="due" class="sm">
     </div>
-    <div class="row" style="margin-top:8px; align-items:center">
-      <select name="client_id" style="flex:2"><option value="">Без клиента</option>
+    <div class="row">
+      <select name="client_id" class="grow2"><option value="">Без клиента</option>
         {% for c in clients %}<option value="{{ c.id }}">{{ client_title(c) }}{% if c.inn %} ({{ c.inn }}){% endif %}</option>{% endfor %}
       </select>
-      <select name="assignee_id" style="flex:1"><option value="me">Мне</option><option value="">Ответственному / любому</option>
+      <select name="assignee_id"><option value="me">Мне</option><option value="">Ответственному / любому</option>
         {% for s in staff %}<option value="{{ s.id }}">{{ s.email }}</option>{% endfor %}</select>
-      <label style="flex:0; white-space:nowrap"><input type="checkbox" name="remind" value="1" checked> напомнить в Telegram</label>
-      <button type="submit" style="flex:0">Добавить</button>
+      <label class="inline-check"><input type="checkbox" name="remind" value="1" checked> напомнить в Telegram</label>
+      <button type="submit">Добавить</button>
     </div>
   </form>
 </div>
 
 <div class="card" id="telegram">
-  <h3 style="margin-top:0">Напоминания в Telegram</h3>
+  <h3>Напоминания в Telegram</h3>
   {% if not bot_ready %}<p class="muted">На сервере не задан BOT_TOKEN, напоминания пока не отправляются.</p>{% endif %}
   {% if user.telegram_id %}<p>Telegram подключён, напоминания придут туда в срок задачи.</p>{% endif %}
   {% if user.telegram_code %}
@@ -63,13 +64,13 @@
     <p>Откройте ссылку и нажмите «Старт»: <a href="https://t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}" target="_blank" rel="noopener">t.me/{{ bot_username }}?start=link_{{ user.telegram_code }}</a></p>
     {% else %}<p>Отправьте боту сообщение: <code>/start link_{{ user.telegram_code }}</code></p>{% endif %}
   {% else %}
-  <form method="post" action="/crm/telegram/link"><button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
+  <form method="post" action="/telegram/link"><input type="hidden" name="back" value="/crm/tasks"><button type="submit">{{ 'Подключить другой Telegram' if user.telegram_id else 'Подключить Telegram' }}</button></form>
   {% endif %}
 </div>
 
 {% if done %}
 <div class="card">
-  <h3 style="margin-top:0">Недавно выполненные</h3>
+  <h3>Недавно выполненные</h3>
   <table>{% for t in done %}
     <tr><td style="width:auto" class="muted"><s>{{ t.title }}</s>{% if t.client %} · {{ client_title(t.client) }}{% endif %}</td>
       <td class="muted" style="width:16%">{{ t.done_at | msk }}</td>

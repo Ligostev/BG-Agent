@@ -3,48 +3,49 @@
 {% block wrapclass %} wide{% endblock %}
 {% macro pct(x) %}{{ '%.0f%%' % (x * 100) if x is not none else '—' }}{% endmacro %}
 {% block content %}
-<div class="card">
-  <div class="tabs">{% for key, title in periods.items() %}
-    <a href="/crm/reports?period={{ key }}" class="{{ 'on' if key == period }}">{{ title }}</a>{% endfor %}</div>
-  <p class="muted" style="margin:4px 0 0">С {{ start.strftime('%d.%m.%Y') }} по {{ end.strftime('%d.%m.%Y') }}
-    {% if user.role != 'admin' %}· по вашим клиентам и клиентам без ответственного{% endif %}</p>
-  <table style="margin-top:12px">
-    <tr><th>Новых сделок</th><td>{{ r.created }}</td></tr>
-    <tr><th>Выдано гарантий</th><td><b>{{ r.issued }}</b> на {{ money(r.issued_amount) }}</td></tr>
-    <tr><th>Комиссия по выданным</th><td><b>{{ money(r.commission) }}</b></td></tr>
-    <tr><th>Отказов</th><td>{{ r.lost }}</td></tr>
-    <tr><th>Доля выдач среди закрытых</th><td>{{ pct(r.conversion) }}</td></tr>
-    <tr><th>Сейчас в работе</th><td>{{ r.in_work }} на {{ money(r.in_work_amount) }}</td></tr>
-  </table>
+<div class="page-head"><div><h1>Аналитика</h1>
+  <p>С {{ start.strftime('%d.%m.%Y') }} по {{ end.strftime('%d.%m.%Y') }}
+    {% if user.role != 'admin' %}· по вашим клиентам и клиентам без ответственного{% endif %}</p></div>
+  <div class="tabs scroll">{% for key, title in periods.items() %}
+    <a href="/crm/reports?period={{ key }}" class="{{ 'on' if key == period }}">{{ title }}</a>{% endfor %}</div></div>
+
+<div class="kpis" style="margin:0 0 16px">
+  <div class="kpi main"><div class="label">Комиссия по выданным</div><div class="value">{{ money(r.commission) }}</div>
+    <div class="sub">выдано {{ r.issued }} на {{ money(r.issued_amount) }}</div></div>
+  <div class="kpi"><div class="label">Новых сделок</div><div class="value">{{ r.created }}</div></div>
+  <div class="kpi"><div class="label">Сейчас в работе</div><div class="value">{{ r.in_work }}</div>
+    <div class="sub">на {{ money(r.in_work_amount) }}</div></div>
+  <div class="kpi"><div class="label">Доля выдач среди закрытых</div><div class="value">{{ pct(r.conversion) }}</div>
+    <div class="sub">отказов: {{ r.lost }}</div></div>
 </div>
 
 <div class="card">
-  <h3 style="margin-top:0">Воронка сделок, созданных за период</h3>
-  <table>{% for title, n, share in r.funnel %}
+  <h3>Воронка сделок, созданных за период</h3>
+  <table class="keep">{% for title, n, share in r.funnel %}
     <tr><th>{{ title }}</th><td class="num" style="width:8%">{{ n }}</td><td class="num muted" style="width:8%">{{ pct(share) }}</td>
-      <td><div class="bar" style="width:{{ (share * 100) | round(1) }}%"></div></td></tr>{% endfor %}</table>
+      <td style="width:45%"><div class="bar-track"><div class="bar" style="width:{{ (share * 100) | round(1) }}%"></div></div></td></tr>{% endfor %}</table>
   <p class="muted">Этап считается пройденным, если сделка дошла до него или дальше. Отказные сделки учтены только на входе.</p>
 </div>
 
 <div class="card">
-  <h3 style="margin-top:0">Комиссия по месяцам</h3>
-  <table>{% for m, n, c, share in r.months %}
+  <h3>Комиссия по месяцам</h3>
+  <table class="keep">{% for m, n, c, share in r.months %}
     <tr><th>{{ m.strftime('%m.%Y') }}</th><td class="num" style="width:10%">{{ n }} выд.</td>
-      <td class="num" style="width:16%">{{ money(c) }}</td><td><div class="bar" style="width:{{ (share * 100) | round(1) }}%"></div></td></tr>{% endfor %}</table>
+      <td class="num" style="width:16%">{{ money(c) }}</td><td style="width:45%"><div class="bar-track"><div class="bar" style="width:{{ (share * 100) | round(1) }}%"></div></div></td></tr>{% endfor %}</table>
 </div>
 
 {% macro grouped(title, rows, label) %}
 <div class="card">
-  <h3 style="margin-top:0">{{ title }}</h3>
+  <h3>{{ title }}</h3>
   {% if rows %}
-  <table>
-    <tr><th style="width:auto">{{ label }}</th><th class="num" style="width:auto">Новых</th><th class="num" style="width:auto">Выдано</th>
+  <div class="table-scroll"><table class="keep">
+    <tr class="head"><th style="width:auto">{{ label }}</th><th class="num" style="width:auto">Новых</th><th class="num" style="width:auto">Выдано</th>
       <th class="num" style="width:auto">Отказ</th><th class="num" style="width:auto">Доля выдач</th><th class="num" style="width:auto">Сумма БГ</th><th class="num" style="width:auto">Комиссия</th></tr>
     {% for x in rows %}
     <tr><td>{{ x.name }}</td><td class="num">{{ x.deals }}</td><td class="num">{{ x.issued }}</td><td class="num">{{ x.lost }}</td>
       <td class="num">{{ pct(x.conversion) }}</td><td class="num">{{ money(x.amount) }}</td><td class="num">{{ money(x.commission) }}</td></tr>
     {% endfor %}
-  </table>
+  </table></div>
   {% else %}<p class="muted">За период данных нет.</p>{% endif %}
 </div>
 {% endmacro %}
@@ -53,17 +54,17 @@
 {% if user.role == 'admin' %}{{ grouped('Менеджеры', r.managers, 'Ответственный') }}{% endif %}
 
 <div class="card">
-  <h3 style="margin-top:0">Банки</h3>
+  <h3>Банки</h3>
   {% if r.banks %}
-  <table>
-    <tr><th style="width:auto">Банк</th><th class="num" style="width:auto">Заявок</th><th class="num" style="width:auto">Одобрено</th>
+  <div class="table-scroll"><table class="keep">
+    <tr class="head"><th style="width:auto">Банк</th><th class="num" style="width:auto">Заявок</th><th class="num" style="width:auto">Одобрено</th>
       <th class="num" style="width:auto">Отказ</th><th class="num" style="width:auto">Выдано</th><th class="num" style="width:auto">Доля одобрений</th><th class="num" style="width:auto">Средняя стоимость</th></tr>
     {% for b in r.banks %}
     <tr><td>{{ b.name }}</td><td class="num">{{ b.sent }}</td><td class="num">{{ b.approved }}</td><td class="num">{{ b.rejected }}</td>
       <td class="num">{{ b.issued }}</td><td class="num">{{ pct(b.approval) }}</td><td class="num">{{ money(b.avg_fee) }}</td></tr>
     {% endfor %}
-  </table>
-  <p class="muted">По заявкам, статус которых менялся за период.</p>
+  </table></div>
+  <p class="muted small">По заявкам, статус которых менялся за период.</p>
   {% else %}<p class="muted">За период заявок в банки не было.</p>{% endif %}
 </div>
 {% endblock %}

@@ -1,14 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Регистрация{% endblock %}
 {% block content %}
-<form class="narrow card" method="post" action="/register">
-  <h2>Регистрация</h2>
-  <label for="email">Email</label>
-  <input id="email" type="email" name="email" value="{{ email or '' }}" required autofocus>
-  <label for="password">Пароль (не короче 8 символов)</label>
-  <input id="password" type="password" name="password" minlength="8" required>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <button type="submit">Создать аккаунт</button>
-  <p class="muted">Уже есть аккаунт? <a href="/login">Войдите</a></p>
-</form>
+<div class="auth">
+  {% include "_auth_promo.html" %}
+  <form class="auth-form" method="post" action="/register">
+    <h2>Регистрация</h2>
+    <label class="field" for="email">Email</label>
+    <input id="email" type="email" name="email" value="{{ email or '' }}" autocomplete="email" required autofocus>
+    <label class="field" for="password">Пароль <span class="muted">(не короче 8 символов)</span></label>
+    <input id="password" type="password" name="password" minlength="8" autocomplete="new-password" required>
+    <label class="check" style="margin-top:18px">
+      <input type="checkbox" name="pd" value="1" required>
+      <span>Даю <a href="/legal/pd" target="_blank">согласие на обработку персональных данных</a></span></label>
+    <label class="check">
+      <input type="checkbox" name="ads" value="1">
+      <span>Хочу получать по email предложения по гарантиям и новости сервиса
+        (<a href="/legal/ads" target="_blank">согласие на рекламу</a>, можно отказаться в любой момент). <span class="muted">Необязательно.</span></span></label>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <button type="submit">Создать аккаунт</button>
+    <p class="switch">Уже есть аккаунт? <a href="/login">Войдите</a></p>
+  </form>
+</div>
 {% endblock %}

@@ -26,7 +26,7 @@ def test_crm_only_for_staff(tmp_path):
         assert c.get("/crm/deals").status_code == 403
         assert "Сделки" not in c.get("/checks").text
         c.post("/logout")
-        r = c.post("/register", data={"email": ADMIN, "password": "password1"})
+        r = c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         assert r.url.path == "/crm/deals"
         assert 'href="/crm/clients"' in r.text
 
@@ -45,7 +45,7 @@ def test_guarantee_request_becomes_deal(tmp_path):
         assert "Новая" in c.get("/tenders").text            # клиент видит этап своей заявки
 
         c.post("/logout")
-        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         board = c.get("/crm/deals").text
         assert "0373200000126000123" in board and "a@example.com" in board
         deal_id = int(re.search(r'/crm/deals/(\d+)">№\d+ · БГ на исполнение', board).group(1))
@@ -78,7 +78,7 @@ def test_guarantee_request_becomes_deal(tmp_path):
 
 def test_client_card(tmp_path):
     with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
-        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         assert c.post("/crm/clients", data={"inn": "123"}).status_code == 200
         assert "10 или 12 цифр" in c.post("/crm/clients", data={"inn": "123"}).text
 
@@ -124,7 +124,7 @@ def test_old_database_gets_role_column(tmp_path):
     db.commit()
     db.close()
     with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
-        assert c.post("/register", data={"email": ADMIN, "password": "password1"}).url.path == "/crm/deals"
+        assert c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"}).url.path == "/crm/deals"
 
 
 def test_tasks_and_reminders(tmp_path):
@@ -139,12 +139,12 @@ def test_tasks_and_reminders(tmp_path):
 
     with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
         sm = c.app.state.sessionmaker
-        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         client_url = c.post("/crm/clients", data={"inn": INN, "title": "ООО Ромашка"}).url.path
         cid = client_url.rsplit("/", 1)[1]
 
         # Привязка Telegram: код из кабинета, бот присылает его в API.
-        c.post("/crm/telegram/link")
+        c.post("/telegram/link", data={"back": "/crm/tasks"})
         page = c.get("/crm/tasks").text
         code = re.search(r"/start link_([\w-]+)", page).group(1)
         hdr = {"X-Bot-Token": "bot-secret", "X-Telegram-Id": "555"}
@@ -193,7 +193,7 @@ def test_manager_sees_own_and_unassigned(tmp_path):
         for email in ("m1@example.com", "m2@example.com"):
             register(c, email)
             c.post("/logout")
-        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         assert "Пусть сначала" not in c.post("/crm/staff", data={"email": "M1@example.com", "role": "manager"}).text
         c.post("/crm/staff", data={"email": "m2@example.com", "role": "manager"})
         assert "не найден" in c.post("/crm/staff", data={"email": "x@example.com", "role": "manager"}).text
@@ -236,7 +236,7 @@ def test_reports_and_excel(tmp_path):
     from openpyxl import Workbook, load_workbook
 
     with make_client(tmp_path, [FakeFns()], admin_emails=(ADMIN,)) as c:
-        c.post("/register", data={"email": ADMIN, "password": "password1"})
+        c.post("/register", data={"email": ADMIN, "password": "password1", "pd": "1"})
         a = c.post("/crm/clients", data={"inn": INN, "title": "ООО Альфа", "source": "Реклама"}).url.path
         b = c.post("/crm/clients", data={"title": "ООО Бета", "source": "Рекомендация"}).url.path
         for url, product, amount in ((a, "БГ на исполнение контракта", "1000000"),
@@ -250,9 +250,9 @@ def test_reports_and_excel(tmp_path):
         c.post("/crm/deals/3", data={"stage": "lost", "product": "БГ на исполнение контракта"})
 
         page = c.get("/crm/reports").text
-        assert "Новых сделок</th><td>3" in page
-        assert "<b>1</b> на 1 000 000 ₽" in page and "<b>8 000 ₽</b>" in page
-        assert "Доля выдач среди закрытых</th><td>50%" in page
+        assert 'Новых сделок</div><div class="value">3<' in page
+        assert "выдано 1 на 1 000 000 ₽" in page and '<div class="value">8 000 ₽</div>' in page
+        assert 'Доля выдач среди закрытых</div><div class="value">50%' in page
         assert "Реклама" in page and "Рекомендация" in page and "ВТБ" in page and "20 000 ₽" in page
         assert c.get("/crm/reports?period=year").status_code == 200
 

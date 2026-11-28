@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from .crm import client_checks, client_title, fill_from_checks, log, set_stage
 from .crm_tasks import MSK, aware, parse_date, parse_due
+from .outreach import client_consents
 from .deps import create_check, get_db, normalize_query, staff_user
 from .models import (STAFF_ROLES, Activity, BankStatus, Client, Contact, Deal, DealBank, DealStage, Task, User,
                      utcnow)
@@ -167,7 +168,7 @@ async def deal_update(deal_id: int, stage: str = Form(""), product: str = Form("
                       user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
     deal = await get_deal(db, user, deal_id)
     if stage:
-        set_stage(db, deal, stage, user)
+        await set_stage(db, deal, stage, user)
     deal.product = clean(product, 200) or deal.product
     deal.amount = _float(amount)
     deal.commission = _float(commission)
@@ -186,7 +187,7 @@ async def bank_add(deal_id: int, bank: str = Form(), user: User = Depends(staff_
         deal.banks.append(DealBank(bank=name))
         log(db, deal.client_id, user, f"Сделка №{deal.id}: добавлен банк {name}", deal_id=deal.id)
         if deal.stage in (DealStage.NEW, DealStage.DOCS):
-            set_stage(db, deal, DealStage.BANKS, user)
+            await set_stage(db, deal, DealStage.BANKS, user)
         await db.commit()
     return go(f"/crm/deals/{deal.id}#banks")
 
@@ -204,9 +205,9 @@ async def bank_update(deal_id: int, bank_id: int, status: str = Form(), rate: st
         log(db, deal.client_id, user, f"Сделка №{deal.id}: {row.bank} — {row.status_title}", deal_id=deal.id)
         # Первое одобрение или выдача двигает сделку дальше по воронке.
         if status == "approved" and deal.stage in (DealStage.NEW, DealStage.DOCS, DealStage.BANKS):
-            set_stage(db, deal, DealStage.APPROVED, user)
+            await set_stage(db, deal, DealStage.APPROVED, user)
         elif status == "issued" and deal.stage != DealStage.ISSUED:
-            set_stage(db, deal, DealStage.ISSUED, user)
+            await set_stage(db, deal, DealStage.ISSUED, user)
     row.rate, row.fee, row.note = _float(rate), _float(fee), clean(note, 1000)
     await db.commit()
     return go(f"/crm/deals/{deal.id}#banks")
@@ -282,7 +283,8 @@ async def client_page(client_id: int, request: Request, user: User = Depends(sta
         await db.commit()
     return render(request, "crm_client.html", **ctx(
         user=user, client=client, checks=await client_checks(db, client), log=await activities(db, client.id),
-        tasks=await open_tasks(db, Task.client_id == client.id), staff=await staff_list(db)))
+        tasks=await open_tasks(db, Task.client_id == client.id), staff=await staff_list(db),
+        consents=await client_consents(db, client)))
 
 
 @router.post("/clients/{client_id}")
@@ -430,11 +432,6 @@ async def task_postpone(task_id: int, days: int = Form(1), back: str = Form(""),
     return go(back_url(back))
 
 
-@router.post("/telegram/link")
-async def telegram_link(user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
-    user.telegram_code = secrets.token_urlsafe(12)
-    await db.commit()
-    return go("/crm/tasks#telegram")
 
 
 # --- Сотрудники (только администратор) ----------------------------------------------------------------
@@ -574,3 +571,125 @@ async def clients_import(request: Request, file: UploadFile, user: User = Depend
     if bad:
         parts.append(f"с неверным ИНН: {bad}")
     return await clients_page(request, notice=", ".join(parts), user=user, db=db)
+
+
+# --- Согласия и рассылки -----------------------------------------------------------------------------
+
+@router.post("/clients/{client_id}/consents")
+async def consent_add(client_id: int, request: Request, channel: str = Form(), address: str = Form(),
+                      source: str = Form(), user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    """Согласие, полученное вне кабинета (подписанная форма, письмо клиента). Источник обязателен:
+    по закону доказывать согласие придётся нам."""
+    from .outreach import CHANNEL_TITLES, give_consent
+    client = await get_client(db, user, client_id)
+    address, source = (address or "").strip(), clean(source, 250)
+    if channel not in CHANNEL_TITLES or not address or not source:
+        raise HTTPException(400, "Укажите канал, адрес и где получено согласие")
+    if channel == "email":
+        address = address.lower()
+    await give_consent(db, request.app.state.settings, kind="ads", channel=channel, address=address,
+                       source=f"Внесено сотрудником {user.email}: {source}", client_id=client.id, recorded_by=user)
+    log(db, client.id, user, f"Согласие на рекламу: {CHANNEL_TITLES[channel]} {address} ({source})")
+    await db.commit()
+    return go(f"/crm/clients/{client.id}#consents")
+
+
+@router.post("/clients/{client_id}/consents/{consent_id}/revoke")
+async def consent_revoke(client_id: int, consent_id: int, user: User = Depends(staff_user),
+                         db: AsyncSession = Depends(get_db)):
+    from .outreach import client_consents, revoke_address
+    client = await get_client(db, user, client_id)
+    consent = next((c for c in await client_consents(db, client) if c.id == consent_id), None)
+    if consent is None:
+        raise HTTPException(404, "Согласие не найдено")
+    await revoke_address(db, consent.kind, consent.channel, consent.address, f"Отозвано по просьбе клиента ({user.email})")
+    log(db, client.id, user, f"Отзыв согласия: {consent.channel} {consent.address}")
+    await db.commit()
+    return go(f"/crm/clients/{client.id}#consents")
+
+
+def admin_only(user: User) -> None:
+    if not is_admin(user):
+        raise HTTPException(403, "Рассылки запускает администратор")
+
+
+@router.get("/campaigns")
+async def campaigns_page(request: Request, user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    from .models import Campaign
+    from .outreach import SEGMENTS, campaign_stats
+    admin_only(user)
+    rows = list((await db.execute(select(Campaign).order_by(Campaign.id.desc()).limit(100))).scalars())
+    s = request.app.state.settings
+    return render(request, "crm_campaigns.html", **ctx(
+        user=user, campaigns=rows, stats=await campaign_stats(db, [c.id for c in rows]), segments=SEGMENTS,
+        mail_ready=bool(s.smtp_host and s.smtp_from), bot_ready=bool(s.bot_token),
+        operator_ready=bool(s.operator_name)))
+
+
+@router.post("/campaigns")
+async def campaign_create(request: Request, title: str = Form(), channel: str = Form(), subject: str = Form(""),
+                          body: str = Form(), advertiser: str = Form(""), erid: str = Form(""),
+                          group: str = Form("all"), source: str = Form(""), user: User = Depends(staff_user),
+                          db: AsyncSession = Depends(get_db)):
+    from .models import Campaign
+    from .outreach import SEGMENTS
+    admin_only(user)
+    if channel not in ("email", "telegram") or not body.strip():
+        raise HTTPException(400, "Нужны канал и текст")
+    c = Campaign(title=clean(title, 300) or "Рассылка", channel=channel, subject=clean(subject, 300),
+                 body=body.strip()[:4000], advertiser=clean(advertiser, 300), erid=clean(erid, 100),
+                 segment={"group": group if group in SEGMENTS else "all", "source": clean(source, 200) or ""},
+                 author_id=user.id)
+    db.add(c)
+    await db.commit()
+    return go(f"/crm/campaigns/{c.id}")
+
+
+@router.get("/campaigns/{campaign_id}")
+async def campaign_page(campaign_id: int, request: Request, user: User = Depends(staff_user),
+                        db: AsyncSession = Depends(get_db)):
+    from .models import Campaign, Outbox
+    from .outreach import SEGMENTS, ad_footer, campaign_stats, recipients
+    admin_only(user)
+    c = await db.get(Campaign, campaign_id)
+    if c is None:
+        raise HTTPException(404, "Рассылка не найдена")
+    targets = await recipients(db, c) if c.status == "draft" else []
+    s = request.app.state.settings
+    preview = f"{c.body}\n\n" + ad_footer(c, s, targets[0] if targets else type("C", (), {"token": "…"})(),
+                                          s.public_url)
+    failed = list((await db.execute(select(Outbox).where(Outbox.campaign_id == c.id, Outbox.status == "failed")
+                                    .limit(20))).scalars())
+    return render(request, "crm_campaign.html", **ctx(
+        user=user, c=c, targets=targets, preview=preview, segments=SEGMENTS,
+        stats=(await campaign_stats(db, [c.id])).get(c.id, {}), failed=failed))
+
+
+@router.post("/campaigns/{campaign_id}/send")
+async def campaign_send(campaign_id: int, request: Request, confirm: str = Form(""),
+                        user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    from .models import Campaign
+    from .outreach import queue_campaign
+    admin_only(user)
+    c = await db.get(Campaign, campaign_id)
+    if c is None:
+        raise HTTPException(404, "Рассылка не найдена")
+    if c.status != "draft" or not confirm:
+        return go(f"/crm/campaigns/{c.id}")
+    if c.channel == "email" and not request.app.state.settings.public_url:
+        # Без адреса кабинета в письме не будет рабочей ссылки «Отписаться», а она обязательна.
+        raise HTTPException(400, "Задайте PUBLIC_URL или DOMAIN на сервере: без них в письме нет ссылки «Отписаться»")
+    await queue_campaign(db, c, request.app.state.settings, request.app.state.settings.public_url)
+    await db.commit()
+    return go(f"/crm/campaigns/{c.id}")
+
+
+@router.post("/campaigns/{campaign_id}/delete")
+async def campaign_delete(campaign_id: int, user: User = Depends(staff_user), db: AsyncSession = Depends(get_db)):
+    from .models import Campaign
+    admin_only(user)
+    c = await db.get(Campaign, campaign_id)
+    if c is not None and c.status == "draft":
+        await db.delete(c)
+        await db.commit()
+    return go("/crm/campaigns")

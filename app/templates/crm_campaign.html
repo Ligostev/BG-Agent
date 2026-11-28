@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }}{% endblock %}
+{% block wrapclass %} wide{% endblock %}
+{% block content %}
+<a class="back" href="/crm/campaigns">← Рассылки</a>
+<div class="page-head"><div><h1>{{ c.title }}</h1>
+  <p>{{ c.channel }} · {{ segments.get(c.segment.get('group', 'all')) }}{% if c.segment.get('source') %} · источник «{{ c.segment.get('source') }}»{% endif %}</p></div></div>
+<div class="card">
+  {% if c.subject %}<p><b>Тема:</b> {{ c.subject }}</p>{% endif %}
+  <pre style="white-space:pre-wrap; font:inherit; background:var(--bg); padding:16px; border-radius:var(--radius-sm); margin-top:0">{{ preview }}</pre>
+  {% if c.status == 'draft' %}
+    <p>Получателей с действующим согласием: <b>{{ targets | length }}</b></p>
+    {% if targets %}<p class="muted">{{ targets[:20] | map(attribute='address') | join(', ') }}{% if targets | length > 20 %} и ещё {{ targets | length - 20 }}{% endif %}</p>{% endif %}
+    <form method="post" action="/crm/campaigns/{{ c.id }}/send" class="row">
+      <label class="inline-check"><input type="checkbox" name="confirm" value="1" required> Текст проверен, отправить {{ targets | length }} получателям</label>
+      <button type="submit" {{ 'disabled' if not targets }}>Отправить</button>
+    </form>
+    <form method="post" action="/crm/campaigns/{{ c.id }}/delete" style="margin-top:8px"><button class="link" type="submit">Удалить черновик</button></form>
+  {% else %}
+    <p>Отправлено {{ stats.get('sent', 0) }}, в очереди {{ stats.get('queued', 0) }}, ошибок {{ stats.get('failed', 0) }},
+      пропущено (отписались) {{ stats.get('skipped', 0) }}. Поставлена в очередь {{ c.queued_at | msk }}.</p>
+    {% for f in failed %}<p class="muted">{{ f.address }}: {{ f.error }}</p>{% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

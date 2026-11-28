@@ -51,7 +51,7 @@ def wait_status(client, check_id, statuses, headers=None):
 
 
 def register(client, email="a@example.com"):
-    r = client.post("/register", data={"email": email, "password": "password1"})
+    r = client.post("/register", data={"email": email, "password": "password1", "pd": "1"})
     assert r.status_code == 200 and r.url.path == "/checks"
 
 
@@ -109,3 +109,12 @@ def test_bot_api_with_captcha(tmp_path):
         # тот же telegram_id видит свою историю, другой нет
         assert [x["id"] for x in c.get("/api/checks", headers=bot).json()] == [check_id]
         assert c.get("/api/checks", headers={**bot, "X-Telegram-Id": "43"}).json() == []
+
+
+def test_static_brand_assets(tmp_path):
+    with make_client(tmp_path, [FakeFns()]) as c:
+        page = c.get("/login").text
+        assert "/static/css/tenfin.css?v=" in page and "/static/brand/logo.svg?v=" in page
+        for path in ("/static/css/tenfin.css", "/static/brand/logo.svg", "/static/brand/favicon.svg",
+                     "/static/fonts/manrope-cyrillic.woff2", "/static/fonts/unbounded-cyrillic.woff2"):
+            assert c.get(path).status_code == 200, path
